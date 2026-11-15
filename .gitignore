@@ -1,0 +1,31 @@
+# Secrets, credentials, and user health/save data
+.env
+.env.*
+*.jks
+*.keystore
+/data/
+/backups/
+/logs/
+/health_records/
+/dist/
+signing.properties
+
+# Gradle & Kotlin build caches and outputs
+.gradle/
+.kotlin/
+build/
+*/build/
+local.properties
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+
+# IDE & OS metadata
+.idea/
+*.iml
+captures/
+*.log
+.DS_Store
+Thumbs.db
