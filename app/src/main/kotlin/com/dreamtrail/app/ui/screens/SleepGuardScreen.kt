@@ -32,6 +32,7 @@ import com.dreamtrail.app.ui.components.formatDurationZh
 import com.dreamtrail.app.ui.theme.DreamTrailColors
 import com.dreamtrail.core.content.ContentCatalog
 import com.dreamtrail.core.model.ExpeditionSession
+import com.dreamtrail.core.model.RegionId
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import java.text.SimpleDateFormat
@@ -172,7 +173,13 @@ fun SleepGuardScreen(
                     .widthIn(max = 560.dp)
                     .clip(RoundedCornerShape(16.dp))
             ) {
-                CampfireTravelerScene(isTraveling = true, reduceMotion = reduceMotion)
+                CampfireTravelerScene(
+                    isTraveling = true,
+                    reduceMotion = reduceMotion,
+                    regionId = activeRoute?.regionId ?: RegionId.MISTWOOD,
+                    companionId = running.snapshot.activeCompanionId,
+                    nightPhenomenon = running.nightPhenomenon
+                )
             }
 
             JournalCard(

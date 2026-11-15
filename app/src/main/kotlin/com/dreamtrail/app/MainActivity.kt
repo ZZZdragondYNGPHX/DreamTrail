@@ -21,6 +21,7 @@ import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -203,6 +204,17 @@ class MainActivity : ComponentActivity() {
 
             DreamTrailTheme(fontScaleLevel = dataState.settings.fontScaleLevel) {
                 var currentTab by rememberSaveable { mutableStateOf(AppTab.JOURNEY) }
+                val tabStateHolder = rememberSaveableStateHolder()
+                val snackbarHostState = remember { SnackbarHostState() }
+                LaunchedEffect(uiState.statusNotice, uiState.errorMessage, isSleepingGuardActive, showSettings) {
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                    if (!isSleepingGuardActive && !showSettings) {
+                        val message = uiState.errorMessage ?: uiState.statusNotice
+                        if (message != null) {
+                            snackbarHostState.showSnackbar(message, withDismissAction = true)
+                        }
+                    }
+                }
 
                 val running = dataState.runningSession
                 if (isSleepingGuardActive && running != null) {
@@ -252,6 +264,15 @@ class MainActivity : ComponentActivity() {
                         )
                     },
                     bottomBar = {
+                        Column {
+                            SnackbarHost(snackbarHostState) { data ->
+                                Snackbar(
+                                    snackbarData = data,
+                                    containerColor = DreamTrailColors.CardElevated,
+                                    contentColor = DreamTrailColors.ParchmentText,
+                                    dismissActionContentColor = DreamTrailColors.LanternAmber
+                                )
+                            }
                         NavigationBar(
                             containerColor = DreamTrailColors.CardSurface,
                             contentColor = DreamTrailColors.ParchmentText
@@ -261,6 +282,7 @@ class MainActivity : ComponentActivity() {
                                 val icon = when (tab) {
                                     AppTab.JOURNEY -> Icons.Rounded.Explore
                                     AppTab.CHARACTER -> Icons.Rounded.Person
+                                    AppTab.COMPANIONS -> Icons.Rounded.Groups
                                     AppTab.CAMP -> Icons.Rounded.Cottage
                                     AppTab.COMPENDIUM -> Icons.AutoMirrored.Rounded.MenuBook
                                 }
@@ -270,8 +292,15 @@ class MainActivity : ComponentActivity() {
                                         viewModel.clearNotices()
                                         currentTab = tab
                                     },
+                                    alwaysShowLabel = true,
                                     icon = { Icon(icon, contentDescription = null) },
-                                    label = { Text(tab.label) },
+                                    label = {
+                                        Text(
+                                            text = tab.label,
+                                            maxLines = 1,
+                                            softWrap = false
+                                        )
+                                    },
                                     colors = NavigationBarItemDefaults.colors(
                                         selectedIconColor = DreamTrailColors.LanternInk,
                                         selectedTextColor = DreamTrailColors.LanternAmber,
@@ -281,6 +310,7 @@ class MainActivity : ComponentActivity() {
                                     )
                                 )
                             }
+                        }
                         }
                     }
                 ) { innerPadding ->
@@ -303,58 +333,62 @@ class MainActivity : ComponentActivity() {
                                     CircularProgressIndicator(color = DreamTrailColors.LanternAmber)
                                 }
                             } else {
-                                when (currentTab) {
-                                    AppTab.JOURNEY -> JourneyScreen(
-                                        dataState = dataState,
-                                        uiState = uiState,
-                                        onSelectRoute = viewModel::selectRoute,
-                                        onSelectStrategy = viewModel::selectStrategy,
-                                        onStartExpedition = viewModel::startExpedition,
-                                        onCancelEarly = viewModel::cancelExpeditionEarly,
-                                        onEndExpedition = viewModel::endExpedition,
-                                        onDismissReport = viewModel::dismissLatestReport,
-                                        onOpenHistoryReport = viewModel::openHistoryReport,
-                                        onRetry = viewModel::retryFailedAction,
-                                        onSelectCompanion = viewModel::selectActiveCompanion,
-                                        onSelectTeaBlend = viewModel::selectTeaBlend,
-                                        onSelectDreamBeaconTier = viewModel::selectDreamBeaconTier,
-                                        onResolveMorningEcho = viewModel::resolveMorningEcho,
-                                        onApplyLoadout = viewModel::applyLoadout
-                                    )
-                                    AppTab.CHARACTER -> CharacterScreen(
-                                        dataState = dataState,
-                                        statusNotice = uiState.statusNotice,
-                                        errorMessage = uiState.errorMessage,
-                                        onEquipItem = viewModel::equipItem,
-                                        onUnequipSlot = viewModel::unequipSlot,
-                                        onUpgradeEquipment = viewModel::upgradeEquipment,
-                                        onReforgeAffix = viewModel::reforgeEquipmentAffix,
-                                        onEngraveSecondaryAffix = viewModel::engraveSecondaryAffix,
-                                        onToggleLock = viewModel::toggleLock,
-                                        onSalvageSelected = viewModel::salvageSelected,
-                                        onTogglePassive = viewModel::togglePassive,
-                                        duplicateSalvageCandidates = viewModel::duplicateSalvageIds,
-                                        onUnlockAstralNode = viewModel::unlockAstralNode,
-                                        onResetAstralNodes = viewModel::resetAstralNodes,
-                                        onSaveLoadout = { viewModel.saveLoadout(it) },
-                                        onApplyLoadout = viewModel::applyLoadout
-                                    )
-                                    AppTab.CAMP -> CampScreen(
-                                        dataState = dataState,
-                                        statusNotice = uiState.statusNotice,
-                                        errorMessage = uiState.errorMessage,
-                                        onUpgradeFacility = viewModel::upgradeFacility,
-                                        onCraftEquipment = viewModel::craftEquipment,
-                                        onCraftKeepsake = viewModel::craftKeepsake,
-                                        onSelectTeaBlend = viewModel::selectTeaBlend,
-                                        onTransmuteMaterial = viewModel::transmuteMaterial
-                                    )
-                                    AppTab.COMPENDIUM -> CompendiumScreen(
-                                        dataState = dataState,
-                                        statusNotice = uiState.statusNotice,
-                                        errorMessage = uiState.errorMessage,
-                                        onGiftCompanion = viewModel::giftCompanion
-                                    )
+                                tabStateHolder.SaveableStateProvider(currentTab.name) {
+                                    when (currentTab) {
+                                        AppTab.JOURNEY -> JourneyScreen(
+                                            dataState = dataState,
+                                            uiState = uiState,
+                                            onSelectRoute = viewModel::selectRoute,
+                                            onSelectStrategy = viewModel::selectStrategy,
+                                            onStartExpedition = viewModel::startExpedition,
+                                            onCancelEarly = viewModel::cancelExpeditionEarly,
+                                            onEndExpedition = viewModel::endExpedition,
+                                            onDismissReport = viewModel::dismissLatestReport,
+                                            onOpenHistoryReport = viewModel::openHistoryReport,
+                                            onRetry = viewModel::retryFailedAction,
+                                            onSelectCompanion = viewModel::selectActiveCompanion,
+                                            onSelectTeaBlend = viewModel::selectTeaBlend,
+                                            onSelectDreamBeaconTier = viewModel::selectDreamBeaconTier,
+                                            onResolveMorningEcho = viewModel::resolveMorningEcho,
+                                            onApplyLoadout = viewModel::applyLoadout
+                                        )
+                                        AppTab.CHARACTER -> CharacterScreen(
+                                            dataState = dataState,
+                                            statusNotice = uiState.statusNotice,
+                                            errorMessage = uiState.errorMessage,
+                                            actionInProgress = uiState.isPerformingAction,
+                                            onEquipItem = viewModel::equipItem,
+                                            onUnequipSlot = viewModel::unequipSlot,
+                                            onUpgradeEquipment = viewModel::upgradeEquipment,
+                                            onReforgeAffix = viewModel::reforgeEquipmentAffix,
+                                            onEngraveSecondaryAffix = viewModel::engraveSecondaryAffix,
+                                            onToggleLock = viewModel::toggleLock,
+                                            onSalvageSelected = viewModel::salvageSelected,
+                                            onTogglePassive = viewModel::togglePassive,
+                                            duplicateSalvageCandidates = viewModel::duplicateSalvageIds,
+                                            onUnlockAstralNode = viewModel::unlockAstralNode,
+                                            onResetAstralNodes = viewModel::resetAstralNodes,
+                                            onSaveLoadout = { viewModel.saveLoadout(it) },
+                                            onApplyLoadout = viewModel::applyLoadout
+                                        )
+                                        AppTab.COMPANIONS -> CompanionsScreen(
+                                            dataState = dataState,
+                                            onSelectCompanion = viewModel::selectActiveCompanion,
+                                            onGiftCompanion = viewModel::giftCompanion
+                                        )
+                                        AppTab.CAMP -> CampScreen(
+                                            dataState = dataState,
+                                            onUpgradeFacility = viewModel::upgradeFacility,
+                                            onCraftEquipment = viewModel::craftEquipment,
+                                            onCraftKeepsake = viewModel::craftKeepsake,
+                                            onSelectTeaBlend = viewModel::selectTeaBlend,
+                                            onTransmuteMaterial = viewModel::transmuteMaterial
+                                        )
+                                        AppTab.COMPENDIUM -> CompendiumScreen(
+                                            dataState = dataState,
+                                            onNavigateToCompanions = { currentTab = AppTab.COMPANIONS }
+                                        )
+                                    }
                                 }
                             }
                         }

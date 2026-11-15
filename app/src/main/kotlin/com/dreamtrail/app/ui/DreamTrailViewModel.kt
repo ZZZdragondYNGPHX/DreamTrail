@@ -26,6 +26,7 @@ import kotlinx.coroutines.withContext
 enum class AppTab(val label: String) {
     JOURNEY("旅程"),
     CHARACTER("角色"),
+    COMPANIONS("伙伴"),
     CAMP("营地"),
     COMPENDIUM("图鉴")
 }
@@ -35,6 +36,7 @@ data class JourneyUiState(
     val selectedStrategy: ExpeditionStrategy = ExpeditionStrategy.STEADY,
     val isSubmittingDeparture: Boolean = false,
     val isSettling: Boolean = false,
+    val isPerformingAction: Boolean = false,
     val activePreview: ExpeditionPreview? = null,
     val latestReport: SettlementResult? = null,
     val historyDetailReport: SettlementResult? = null,
@@ -321,14 +323,11 @@ class DreamTrailViewModel(
     }
 
     fun unequipSlot(slot: EquipmentSlot) {
-        viewModelScope.launch {
-            repository.unequipSlot(slot)
-            _uiState.update { it.copy(statusNotice = "已卸下${slot.displayName}") }
-        }
+        runSimpleAction("已卸下${slot.displayName}") { repository.unequipSlot(slot) }
     }
 
     fun toggleLock(instanceId: String) {
-        viewModelScope.launch { repository.toggleItemLock(instanceId) }
+        runSimpleAction("装备锁定状态已更新") { repository.toggleItemLock(instanceId) }
     }
 
     fun salvageSelected(selectedIds: Set<String>) {
@@ -590,14 +589,28 @@ class DreamTrailViewModel(
     }
 
     private fun runSimpleAction(successMsg: String, block: suspend () -> ActionOutcome<Unit>) {
+        if (_uiState.value.isPerformingAction) return
+        _uiState.update {
+            it.copy(isPerformingAction = true, statusNotice = null, errorMessage = null, retryKind = null)
+        }
         viewModelScope.launch {
-            when (val res = block()) {
-                is ActionOutcome.Success -> _uiState.update {
-                    it.copy(statusNotice = successMsg, errorMessage = null)
+            try {
+                when (val res = block()) {
+                    is ActionOutcome.Success -> _uiState.update {
+                        it.copy(statusNotice = successMsg, errorMessage = null)
+                    }
+                    is ActionOutcome.Failure -> _uiState.update {
+                        it.copy(errorMessage = res.reason, statusNotice = null)
+                    }
                 }
-                is ActionOutcome.Failure -> _uiState.update {
-                    it.copy(errorMessage = res.reason)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(errorMessage = "操作未完成，请重试。", statusNotice = null)
                 }
+            } finally {
+                _uiState.update { it.copy(isPerformingAction = false) }
             }
         }
     }

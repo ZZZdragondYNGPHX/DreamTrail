@@ -28,6 +28,19 @@ bash tools/android-service.sh stop
 
 调试 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
 
+UI 回归测试位于 `app/src/androidTest/`，覆盖标签状态恢复、详情弹窗滚动、热茶选择和守夜结算。测试会替换测试应用的存档，只在本项目的专用模拟器中运行。先通过构建服务生成两个 APK，构建结束后再启动模拟器并安装、执行测试：
+
+```bash
+bash tools/android-service.sh build :app:assembleDebug :app:assembleDebugAndroidTest
+# 构建服务结束后执行
+bash tools/android-service.sh emulator YourTestAvd -port 5580
+adb -s emulator-5580 install -r app/build/outputs/apk/debug/app-debug.apk
+adb -s emulator-5580 install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+adb -s emulator-5580 shell am instrument -w com.dreamtrail.app.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+同时验证标准字体和系统大字体；小屏回归可设置 `wm size 640x1136`、`wm density 320`、`settings put system font_scale 1.5`。验证结束后停止服务并删除专用测试设备及数据。
+
 ## 签名发布
 
 创建发布密钥，将签名配置保存在仓库外的 `release.properties`：

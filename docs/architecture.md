@@ -4,7 +4,7 @@
 
 `core` 定义游戏状态和内容，并执行确定性战斗、成长、离线结算与存档校验。它不依赖 Android、Room 或系统时钟。
 
-`app` 使用 Jetpack Compose 展示旅途、角色、营地、图鉴和守夜界面。`DreamTrailViewModel` 管理交互状态，`GameRepository` 协调数据库事务、规则调用与备份操作。
+`app` 使用 Jetpack Compose 展示旅途、角色、伙伴、营地、图鉴和守夜界面。`DreamTrailViewModel` 管理交互状态，`GameRepository` 协调数据库事务、规则调用与备份操作。
 
 ## 旅程与收益
 

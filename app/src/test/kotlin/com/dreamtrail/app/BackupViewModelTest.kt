@@ -10,6 +10,10 @@ import com.dreamtrail.app.ui.DreamTrailViewModel
 import com.dreamtrail.app.ui.RetryActionKind
 import com.dreamtrail.core.engine.ActionOutcome
 import com.dreamtrail.core.model.ExpeditionStrategy
+import com.dreamtrail.core.model.EquipmentInstance
+import com.dreamtrail.core.model.ResourceBag
+import com.dreamtrail.core.content.ContentCatalog
+import com.dreamtrail.core.save.SaveBackupCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -104,6 +108,33 @@ class BackupViewModelTest {
         } finally {
             release.countDown()
         }
+    }
+
+    @Test fun `equipment action ignores pending repeat and failure clears success notice`() = fixture { vm, repo ->
+        val exported = (repo.exportBackupJson() as ActionOutcome.Success).value
+        val payload = (SaveBackupCodec.decodeAndValidate(exported) as ActionOutcome.Success).value
+        val def = ContentCatalog.equipmentDefs.first()
+        val item = EquipmentInstance("action_test", def.id, def.tier, affix = def.defaultAffix)
+        val funded = payload.copy(
+            playerState = payload.playerState.copy(
+                resources = ResourceBag(10_000L, mapOf(def.craftMaterialId to 1_000L))
+            ),
+            inventory = listOf(item)
+        )
+        assertTrue(repo.importBackupJson(SaveBackupCodec.encode(funded)) is ActionOutcome.Success)
+        await { vm.dataState.value.inventory.any { it.instanceId == item.instanceId } }
+
+        vm.upgradeEquipment(item.instanceId)
+        vm.upgradeEquipment(item.instanceId)
+        await { !vm.uiState.value.isPerformingAction }
+        await { vm.dataState.value.inventory.first().level == 2 }
+        assertNotNull(vm.uiState.value.statusNotice)
+        assertNull(vm.uiState.value.errorMessage)
+
+        vm.upgradeEquipment("missing_equipment")
+        await { !vm.uiState.value.isPerformingAction }
+        assertNotNull(vm.uiState.value.errorMessage)
+        assertNull(vm.uiState.value.statusNotice)
     }
 
     @Test

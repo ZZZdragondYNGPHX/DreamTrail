@@ -40,38 +40,98 @@ fun JournalCard(
 fun ResourceSummaryRow(resources: ResourceBag, modifier: Modifier = Modifier) {
     FlowRow(
         modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        ResourceChip("金币 ${resources.gold}", DreamTrailColors.LanternAmber)
-        ResourceChip("松木 ${resources.materialCount(RegionId.MISTWOOD.materialId)}", DreamTrailColors.SageMist)
+        ResourceChip(
+            text = "金币 ${resources.gold}",
+            accent = DreamTrailColors.LanternAmber,
+            kind = ResourceVisualKind.GOLD
+        )
+        ResourceChip(
+            text = "松木 ${resources.materialCount(RegionId.MISTWOOD.materialId)}",
+            accent = materialAccentColor(RegionId.MISTWOOD.materialId),
+            kind = ResourceVisualKind.MATERIAL
+        )
         val tidal = resources.materialCount(RegionId.TIDAL_FLAT.materialId)
-        if (tidal > 0L) ResourceChip("矿砂 $tidal", DreamTrailColors.StarlightBlue)
+        if (tidal > 0L) {
+            ResourceChip(
+                text = "矿砂 $tidal",
+                accent = materialAccentColor(RegionId.TIDAL_FLAT.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
         val star = resources.materialCount(RegionId.STARLIT_RIDGE.materialId)
-        if (star > 0L) ResourceChip("碎晶 $star", Color(0xFFC2A7E0))
+        if (star > 0L) {
+            ResourceChip(
+                text = "碎晶 $star",
+                accent = materialAccentColor(RegionId.STARLIT_RIDGE.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
         val cloud = resources.materialCount(RegionId.CLOUD_SANCTUARY.materialId)
-        if (cloud > 0L) ResourceChip("灵绒 $cloud", Color(0xFF9AD4DC))
+        if (cloud > 0L) {
+            ResourceChip(
+                text = "灵绒 $cloud",
+                accent = materialAccentColor(RegionId.CLOUD_SANCTUARY.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
         val dream = resources.materialCount(RegionId.DREAM_SEA.materialId)
-        if (dream > 0L) ResourceChip("梦珠 $dream", Color(0xFF8AB8FF))
+        if (dream > 0L) {
+            ResourceChip(
+                text = "梦珠 $dream",
+                accent = materialAccentColor(RegionId.DREAM_SEA.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
         val astral = resources.materialCount(RegionId.ASTRAL_ARCH.materialId)
-        if (astral > 0L) ResourceChip("琥珀 $astral", Color(0xFFFFD089))
-        if (resources.bossMarks > 0L) ResourceChip("印记 ${resources.bossMarks}", DreamTrailColors.CoralWarn)
+        if (astral > 0L) {
+            ResourceChip(
+                text = "琥珀 $astral",
+                accent = materialAccentColor(RegionId.ASTRAL_ARCH.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
+        if (resources.bossMarks > 0L) {
+            ResourceChip(
+                text = "印记 ${resources.bossMarks}",
+                accent = DreamTrailColors.CoralWarn,
+                kind = ResourceVisualKind.BOSS_MARK
+            )
+        }
     }
 }
 
 @Composable
-fun ResourceChip(text: String, accent: Color) {
+fun ResourceChip(
+    text: String,
+    accent: Color,
+    kind: ResourceVisualKind? = null
+) {
     Surface(
         shape = RoundedCornerShape(8.dp),
         color = DreamTrailColors.CardElevated,
         border = BorderStroke(1.dp, accent.copy(alpha = 0.45f))
     ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.labelMedium,
-            color = DreamTrailColors.ParchmentText,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-        )
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp)
+        ) {
+            if (kind != null) {
+                ResourceBadgeIcon(
+                    kind = kind,
+                    accent = accent,
+                    size = 14.dp
+                )
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.labelMedium,
+                color = DreamTrailColors.ParchmentText
+            )
+        }
     }
 }
 
