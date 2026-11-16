@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
   "database": {
-    "version": 4,
-    "identityHash": "1fb2e16f4f389cb4ba2e5eaf39bcd425",
+    "version": 5,
+    "identityHash": "2f40f54eb5c5ef83931fb1b77c1ed72b",
     "entities": [
       {
         "tableName": "player_state",
@@ -36,7 +36,7 @@
       },
       {
         "tableName": "expedition_sessions",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `status` TEXT NOT NULL, `route_id` TEXT NOT NULL, `strategy` TEXT NOT NULL, `start_at_utc_ms` INTEGER NOT NULL, `end_at_utc_ms` INTEGER, `start_elapsed_realtime_ms` INTEGER, `start_boot_id` TEXT, `session_seed` INTEGER NOT NULL, `content_version` INTEGER NOT NULL, `rules_version` INTEGER NOT NULL, `snapshot_json` TEXT NOT NULL, `is_onboarding` INTEGER NOT NULL, `night_phenomenon_json` TEXT, PRIMARY KEY(`session_id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`session_id` TEXT NOT NULL, `status` TEXT NOT NULL, `route_id` TEXT NOT NULL, `strategy` TEXT NOT NULL, `start_at_utc_ms` INTEGER NOT NULL, `end_at_utc_ms` INTEGER, `start_elapsed_realtime_ms` INTEGER, `start_boot_id` TEXT, `session_seed` INTEGER NOT NULL, `content_version` INTEGER NOT NULL, `rules_version` INTEGER NOT NULL, `snapshot_json` TEXT NOT NULL, `is_onboarding` INTEGER NOT NULL, `night_phenomenon_json` TEXT, `session_mode` TEXT NOT NULL DEFAULT 'SLEEP', `target_duration_sec` INTEGER, `focus_tag_id` TEXT, `linked_task_id` TEXT, `day_phenomenon_json` TEXT, `distraction_count` INTEGER NOT NULL DEFAULT 0, `flip_focus_sec` INTEGER NOT NULL DEFAULT 0, `zone_id` TEXT NOT NULL, PRIMARY KEY(`session_id`))",
         "fields": [
           {
             "fieldPath": "sessionId",
@@ -117,6 +117,53 @@
             "fieldPath": "nightPhenomenonJson",
             "columnName": "night_phenomenon_json",
             "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "sessionMode",
+            "columnName": "session_mode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'SLEEP'"
+          },
+          {
+            "fieldPath": "targetDurationSec",
+            "columnName": "target_duration_sec",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "focusTagId",
+            "columnName": "focus_tag_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "linkedTaskId",
+            "columnName": "linked_task_id",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "dayPhenomenonJson",
+            "columnName": "day_phenomenon_json",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "distractionCount",
+            "columnName": "distraction_count",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "flipFocusSec",
+            "columnName": "flip_focus_sec",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "zoneId",
+            "columnName": "zone_id",
+            "affinity": "TEXT",
+            "notNull": true
           }
         ],
         "primaryKey": {
@@ -361,7 +408,7 @@
       },
       {
         "tableName": "app_settings",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `font_scale_level` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `reduce_motion` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `font_scale_level` INTEGER NOT NULL, `muted` INTEGER NOT NULL, `reduce_motion` INTEGER NOT NULL, `theme_mode` TEXT NOT NULL DEFAULT 'NIGHT_INK', `soundscape_channel` TEXT NOT NULL DEFAULT 'NONE', `soundscape_volume` INTEGER NOT NULL DEFAULT 60, `soundscape_fade_min` INTEGER NOT NULL DEFAULT 0, `flip_focus_enabled` INTEGER NOT NULL DEFAULT 0, `default_pomodoro_min` INTEGER NOT NULL DEFAULT 25, `default_nap_min` INTEGER NOT NULL DEFAULT 30, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -386,6 +433,55 @@
             "columnName": "reduce_motion",
             "affinity": "INTEGER",
             "notNull": true
+          },
+          {
+            "fieldPath": "themeMode",
+            "columnName": "theme_mode",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NIGHT_INK'"
+          },
+          {
+            "fieldPath": "soundscapeChannel",
+            "columnName": "soundscape_channel",
+            "affinity": "TEXT",
+            "notNull": true,
+            "defaultValue": "'NONE'"
+          },
+          {
+            "fieldPath": "soundscapeVolume",
+            "columnName": "soundscape_volume",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "60"
+          },
+          {
+            "fieldPath": "soundscapeFadeMinutes",
+            "columnName": "soundscape_fade_min",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "flipFocusEnabled",
+            "columnName": "flip_focus_enabled",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "defaultPomodoroMinutes",
+            "columnName": "default_pomodoro_min",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "25"
+          },
+          {
+            "fieldPath": "defaultNapMinutes",
+            "columnName": "default_nap_min",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "30"
           }
         ],
         "primaryKey": {
@@ -428,7 +524,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '1fb2e16f4f389cb4ba2e5eaf39bcd425')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '2f40f54eb5c5ef83931fb1b77c1ed72b')"
     ]
   }
 }

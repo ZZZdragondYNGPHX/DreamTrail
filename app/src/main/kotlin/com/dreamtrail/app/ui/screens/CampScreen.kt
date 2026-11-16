@@ -205,42 +205,81 @@ fun CampScreen(
 
                     if (level < 5) {
                         val target = level + 1
-                        val (goldCost, matPair) = ContentCatalog.facilityUpgradeCost(facility, target)
-                        val (matId, matCost) = matPair
-                        val matName = RegionId.entries.firstOrNull { it.materialId == matId }?.materialName ?: matId
                         val requiredHours = ContentCatalog.facilityRequiredExploreHours(facility, target)
-                        val explored = discovery.totalCreditedSeconds >= requiredHours * 3600L
-                        val affordable = explored &&
-                            player.resources.gold >= goldCost &&
-                            player.resources.materialCount(matId) >= matCost
+                        if (facility == FacilityType.SCRIPTORIUM) {
+                            val (goldCost, inkCost) = ContentCatalog.facilityScriptoriumCost(target)
+                            val focusReqHours = target * 4
+                            val timeUnlocked = discovery.totalCreditedSeconds >= requiredHours * 3600L ||
+                                discovery.totalFocusCreditedSeconds >= focusReqHours * 3600L
+                            val affordable = timeUnlocked &&
+                                player.resources.gold >= goldCost &&
+                                player.resources.inspirationInk >= inkCost
 
-                        if (!explored) {
-                            Text(
-                                text = "累计有效探索 ${requiredHours} 小时后解锁（当前 ${discovery.totalCreditedSeconds / 3600} 小时）",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = DreamTrailColors.CoralWarn
-                            )
-                        }
-                        Button(
-                            onClick = { onUpgradeFacility(facility) },
-                            enabled = affordable,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 46.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Rounded.Upgrade,
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.size(6.dp))
-                            Text(
-                                text = if (level == 0) {
-                                    "修葺 Lv.1（${goldCost}金 + ${matCost}$matName）"
-                                } else {
-                                    "升级至 Lv.$target（${goldCost}金 + ${matCost}$matName）"
-                                }
-                            )
+                            if (!timeUnlocked) {
+                                Text(
+                                    text = "累计专注满 ${focusReqHours} 小时（当前 ${discovery.totalFocusCreditedSeconds / 3600}h）或累计探索 ${requiredHours} 小时解锁",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DreamTrailColors.CoralWarn
+                                )
+                            }
+                            Button(
+                                onClick = { onUpgradeFacility(facility) },
+                                enabled = affordable,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 46.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Upgrade,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.size(6.dp))
+                                Text(
+                                    text = if (level == 0) {
+                                        "修葺 Lv.1（${goldCost}金 + ${inkCost}墨晶）"
+                                    } else {
+                                        "升级至 Lv.$target（${goldCost}金 + ${inkCost}墨晶）"
+                                    }
+                                )
+                            }
+                        } else {
+                            val (goldCost, matPair) = ContentCatalog.facilityUpgradeCost(facility, target)
+                            val (matId, matCost) = matPair
+                            val matName = RegionId.entries.firstOrNull { it.materialId == matId }?.materialName ?: matId
+                            val explored = discovery.totalCreditedSeconds >= requiredHours * 3600L
+                            val affordable = explored &&
+                                player.resources.gold >= goldCost &&
+                                player.resources.materialCount(matId) >= matCost
+
+                            if (!explored) {
+                                Text(
+                                    text = "累计有效探索 ${requiredHours} 小时后解锁（当前 ${discovery.totalCreditedSeconds / 3600} 小时）",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = DreamTrailColors.CoralWarn
+                                )
+                            }
+                            Button(
+                                onClick = { onUpgradeFacility(facility) },
+                                enabled = affordable,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 46.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Upgrade,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.size(6.dp))
+                                Text(
+                                    text = if (level == 0) {
+                                        "修葺 Lv.1（${goldCost}金 + ${matCost}$matName）"
+                                    } else {
+                                        "升级至 Lv.$target（${goldCost}金 + ${matCost}$matName）"
+                                    }
+                                )
+                            }
                         }
                     } else {
                         TagBadge("已建至满级 Lv.5，所有设施增益生效", DreamTrailColors.LanternAmber)
@@ -274,7 +313,7 @@ fun CampScreen(
                                     selectedLabelColor = DreamTrailColors.LanternAmber
                                 )
                             )
-                            for (tier in 1..6) {
+                            for (tier in 1..8) {
                                 FilterChip(
                                     selected = craftTierFilter == tier,
                                     onClick = { craftTierFilter = tier },
@@ -392,10 +431,15 @@ fun CampScreen(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            TagBadge(
-                                                text = if (active) "已冲泡" else "火塘Lv.${tea.requiredTeaHearthLevel}",
-                                                accent = if (active) DreamTrailColors.LanternAmber else if (unlocked) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
-                                            )
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                TagBadge(
+                                                    text = if (active) "已冲泡" else "火塘Lv.${tea.requiredTeaHearthLevel}",
+                                                    accent = if (active) DreamTrailColors.LanternAmber else if (unlocked) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
+                                                )
+                                                if (tea.favoredForFocus) {
+                                                    TagBadge("专注特调", DreamTrailColors.SageMist)
+                                                }
+                                            }
                                         }
                                     }
                                     Text(
@@ -507,6 +551,13 @@ fun CampScreen(
                                             ResourceVisualKind.BOSS_MARK,
                                             DreamTrailColors.CoralWarn,
                                             "${recipe.outputBossMarks}印记"
+                                        )
+                                    }
+                                    if (recipe.outputInspirationInk > 0L) {
+                                        AlchemyIngredientBadge(
+                                            ResourceVisualKind.INK,
+                                            Color(0xFF7FD1BE),
+                                            "${recipe.outputInspirationInk}墨晶"
                                         )
                                     }
                                 }
@@ -667,10 +718,12 @@ fun CampScreen(
                                         )
                                         Text(
                                             text = if (chCount > 0) {
-                                                if (isEscort) "今夜随行备战中 · 羁绊 Lv.$rank"
+                                                if (isEscort) "当前随行备战中 · 羁绊 Lv.$rank"
                                                 else "留守协理：${comp.dispatchRoleSummary}"
-                                            } else {
-                                                "入驻条件：旅舍 Lv.${ch1?.requiredInnLevel ?: 1} · ${comp.dispatchRegionId.displayName}调查 ${ch1?.requiredInvestigation ?: 0}"
+                                            } else when (comp.id) {
+                                                "comp_wen" -> "入驻条件：完成 3 轮白昼专注，或晴岚书院调查达 2"
+                                                "comp_zhaolu" -> "入驻条件：累计专注满 8 小时，或累计探索达 416 小时"
+                                                else -> "入驻条件：旅舍 Lv.${ch1?.requiredInnLevel ?: 1} · ${comp.dispatchRegionId.displayName}调查 ${ch1?.requiredInvestigation ?: 0}"
                                             },
                                             style = MaterialTheme.typography.bodySmall,
                                             color = if (chCount > 0) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
@@ -761,6 +814,33 @@ fun CampScreen(
                             if (comm.rewardAffinity > 0) {
                                 TagBadge("伙伴默契+${comm.rewardAffinity}", Color(0xFFF08A9D))
                             }
+                        }
+                    }
+                }
+            }
+
+            CampStation.SCRIPTORIUM -> {
+                val scrLv = player.facilityLevel(FacilityType.SCRIPTORIUM)
+                item {
+                    JournalCard(borderColor = DreamTrailColors.LanternAmber.copy(alpha = 0.5f)) {
+                        Text(
+                            text = "研习书斋档案台（当前 Lv.$scrLv）",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = DreamTrailColors.ParchmentText
+                        )
+                        Text(
+                            text = "完成白昼专注（番茄定心或心流漫步）可源源不断凝炼「澄明墨晶」，用来扩建研习书斋并永久提高定心祝福上限、墨晶产率与角色攻速。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DreamTrailColors.MutedInk
+                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            TagBadge("专注轮次 ${discovery.totalFocusSessionsCompleted} 次", DreamTrailColors.LanternAmber)
+                            TagBadge("累计专注 ${discovery.totalFocusCreditedSeconds / 60} 分钟", DreamTrailColors.SageMist)
+                            TagBadge("完成待办 ${discovery.completedTasksCount} 项", DreamTrailColors.StarlightBlue)
+                            TagBadge("墨晶产出 +${scrLv * 12}%", Color(0xFF7FD1BE))
                         }
                     }
                 }
@@ -976,7 +1056,7 @@ private fun facilityVisualDescription(type: FacilityType, level: Int): String = 
         2 -> "挂满干燥薄荷与海盐罐，解锁「海盐薄荷茶」及被动「疾风游刃」。"
         3 -> "添置星茴瓷罐与温杯架，解锁「星茴暖身露」。"
         4 -> "建起云雾熏茶屉，解锁「云雾烘青茶」与后期高阶花茶。"
-        else -> "满屋清芬的百草火塘，夜间探索可调配全 7 款秘制热茶。"
+        else -> "满屋清芬的百草火塘，昼夜探索可调配全部 13 款热茶与专注特调。"
     }
     FacilityType.CONSERVATORY -> when (level) {
         0 -> "旅舍外侧的小块星辉苗圃，尚待搭起玻璃花房。"
@@ -985,5 +1065,13 @@ private fun facilityVisualDescription(type: FacilityType, level: Int): String = 
         3 -> "引入陨星温床，可直接将中阶素材催化为云絮微尘与琥珀木。"
         4 -> "星尘温室趋于完善，能稳定凝聚首领印记与深海微光。"
         else -> "繁星与草木共生的花房温室，大幅提升属性上限并开启全部催化配方。"
+    }
+    FacilityType.SCRIPTORIUM -> when (level) {
+        0 -> "尚未搭起露台书架与石研台，仅能零星收集专注墨晶。"
+        1 -> "摆好橡木长桌与松烟砚台，全队生命+8、攻击+2、防护+2，专注墨晶产出+12%。"
+        2 -> "添置黄铜书架与索引卡片盒，全队生命+16、攻击+4、防护+4，专注墨晶产出+24%。"
+        3 -> "修葺明窗抄经回廊，全队生命+24、攻击+6、防护+6，解锁定心祝福与被动「昼夜调息」。"
+        4 -> "引入双曜校时日晷模型，全队生命+32、攻击+8、防护+8，专注墨晶产出+48%。"
+        else -> "澄明典籍满架的云顶书斋，全队生命+40、攻击+10、防护+10，专注墨晶产出+60%。"
     }
 }

@@ -63,7 +63,7 @@ object DurationResolver {
             val sec = ((storedEnd - session.startAtUtcMs).coerceAtLeast(0L)) / 1000L
             return ResolvedDuration(
                 resolvedEndAtUtcMs = storedEnd,
-                durationSeconds = sec.coerceAtMost(RewardBudgetCalculator.MAX_SINGLE_WINDOW_SECONDS),
+                durationSeconds = sec.coerceAtMost(session.sessionMode.maxSingleWindowSeconds),
                 anomalyNote = null
             )
         }
@@ -87,16 +87,20 @@ object DurationResolver {
             session.startElapsedRealtimeMs != null &&
             nowElapsedRealtimeMs != null
 
+        val singleWindowCap = session.sessionMode.maxSingleWindowSeconds
+            .coerceAtMost(RewardBudgetCalculator.MAX_SINGLE_WINDOW_SECONDS)
+        val capHours = singleWindowCap / 3600L
+
         if (sameBoot) {
             val monoMs = nowElapsedRealtimeMs!! - session.startElapsedRealtimeMs!!
             if (monoMs >= 0L) {
                 val rawSec = monoMs / 1000L
-                val cappedSec = rawSec.coerceAtMost(RewardBudgetCalculator.MAX_SINGLE_WINDOW_SECONDS)
+                val cappedSec = rawSec.coerceAtMost(singleWindowCap)
                 val note = when {
                     nowWallUtcMs < session.startAtUtcMs ->
                         "检测到系统时间曾向前回拨，已依据设备运行时长稳妥结算。"
-                    rawSec > RewardBudgetCalculator.MAX_SINGLE_WINDOW_SECONDS ->
-                        "本次冒险已达单次 12 小时记录上限，超出时段伙伴已在营地附近休整。"
+                    rawSec > singleWindowCap ->
+                        "本次${session.sessionMode.displayName}已达单次 ${capHours} 小时记录上限，超出时段伙伴已在营地附近休整。"
                     else -> null
                 }
                 return ResolvedDuration(
@@ -117,9 +121,9 @@ object DurationResolver {
         }
 
         val rawSec = wallMs / 1000L
-        val cappedSec = rawSec.coerceAtMost(RewardBudgetCalculator.MAX_SINGLE_WINDOW_SECONDS)
-        val note = if (rawSec > RewardBudgetCalculator.MAX_SINGLE_WINDOW_SECONDS) {
-            "本次离开时间较长，已按单次最长 12 小时窗口与 24 小时滚动额度上限结算。"
+        val cappedSec = rawSec.coerceAtMost(singleWindowCap)
+        val note = if (rawSec > singleWindowCap) {
+            "本次离开时间较长，已按单次最长 ${capHours} 小时窗口与 24 小时滚动额度上限结算。"
         } else {
             null
         }

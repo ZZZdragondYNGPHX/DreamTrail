@@ -60,6 +60,7 @@ import com.dreamtrail.app.data.repository.AppUiDataState
 import com.dreamtrail.app.ui.components.ArchetypeEmblem
 import com.dreamtrail.app.ui.components.EnemyPortraitTile
 import com.dreamtrail.app.ui.components.EquipmentIconTile
+import com.dreamtrail.app.ui.components.FocusSpiritAvatar
 import com.dreamtrail.app.ui.components.JournalCard
 import com.dreamtrail.app.ui.components.KeepsakeIconTile
 import com.dreamtrail.app.ui.components.SouvenirIconTile
@@ -73,6 +74,7 @@ import com.dreamtrail.core.model.AffixId
 import com.dreamtrail.core.model.EnemyDef
 import com.dreamtrail.core.model.EquipmentDef
 import com.dreamtrail.core.model.EquipmentSlot
+import com.dreamtrail.core.model.FocusSpiritDef
 import com.dreamtrail.core.model.KeepsakeDef
 import com.dreamtrail.core.model.RegionId
 import com.dreamtrail.core.model.SouvenirDef
@@ -80,6 +82,7 @@ import com.dreamtrail.core.model.SouvenirDef
 private enum class CompendiumSection(val label: String) {
     ENEMIES("魔物"),
     GEAR("装备"),
+    SPIRITS("灵兽"),
     SOUVENIRS("风物"),
     REGIONS("秘闻与地区"),
     MILESTONES("成就与信物")
@@ -90,6 +93,7 @@ private enum class CompendiumSection(val label: String) {
 fun CompendiumScreen(
     dataState: AppUiDataState,
     onNavigateToCompanions: () -> Unit = {},
+    onSelectSpirit: (String?) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var section by rememberSaveable { mutableStateOf(CompendiumSection.ENEMIES) }
@@ -101,6 +105,7 @@ fun CompendiumScreen(
     var inspectedGear by remember { mutableStateOf<EquipmentDef?>(null) }
     var inspectedSouvenir by remember { mutableStateOf<SouvenirDef?>(null) }
     var inspectedKeepsake by remember { mutableStateOf<KeepsakeDef?>(null) }
+    var inspectedSpirit by remember { mutableStateOf<FocusSpiritDef?>(null) }
 
     val discovery = dataState.discoveryState
 
@@ -354,6 +359,76 @@ fun CompendiumScreen(
                                 }
                             }
                             repeat(3 - rowGear.size) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+
+                CompendiumSection.SPIRITS -> {
+                    item {
+                        JournalCard {
+                            Text(
+                                text = "伴读小灵兽名录：${discovery.unlockedSpiritIds.size} / ${ContentCatalog.focusSpirits.size}",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = DreamTrailColors.LanternAmber
+                            )
+                            Text(
+                                text = "伴读灵兽在探索各境与专注研习期间随机结识（白昼专注解锁速度翻倍）。收集即可永久提供属性，还可请 1 只坐在书桌旁陪伴。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = DreamTrailColors.MutedInk
+                            )
+                        }
+                    }
+
+                    val spiritRows = ContentCatalog.focusSpirits.chunked(3)
+                    items(spiritRows, key = { row -> "sp_${row.first().id}" }) { rowSpirits ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            for (spirit in rowSpirits) {
+                                val unlocked = spirit.id in discovery.unlockedSpiritIds
+                                val isActive = dataState.playerState.activeSpiritId == spirit.id
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable { inspectedSpirit = spirit },
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = if (isActive) DreamTrailColors.SageMist.copy(alpha = 0.14f) else DreamTrailColors.CardSurface,
+                                    border = BorderStroke(
+                                        width = if (isActive) 1.5.dp else 1.dp,
+                                        color = if (isActive) DreamTrailColors.SageMist else if (unlocked) regionAccentColor(spirit.regionId).copy(alpha = 0.6f) else DreamTrailColors.CardOutline
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                                    ) {
+                                        FocusSpiritAvatar(
+                                            spirit = spirit,
+                                            size = 50.dp,
+                                            unlocked = unlocked,
+                                            active = isActive
+                                        )
+                                        Text(
+                                            text = if (unlocked) spirit.name else "未结识",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = if (unlocked) DreamTrailColors.ParchmentText else DreamTrailColors.MutedInk,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (isActive) "伴读中" else spirit.regionId.displayName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isActive) DreamTrailColors.SageMist else regionAccentColor(spirit.regionId),
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
+                            repeat(3 - rowSpirits.size) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
@@ -952,6 +1027,76 @@ fun CompendiumScreen(
                         style = MaterialTheme.typography.labelMedium,
                         color = if (unlocked) DreamTrailColors.LanternAmber else DreamTrailColors.SageMist
                     )
+                }
+            }
+        }
+    }
+
+    inspectedSpirit?.let { spirit ->
+        val unlocked = spirit.id in discovery.unlockedSpiritIds
+        val isActive = dataState.playerState.activeSpiritId == spirit.id
+        val bonuses = listOfNotNull(
+            spirit.bonusStats.maxHp.takeIf { it > 0 }?.let { "生命+$it" },
+            spirit.bonusStats.attack.takeIf { it > 0 }?.let { "攻击+$it" },
+            spirit.bonusStats.defense.takeIf { it > 0 }?.let { "防御+$it" },
+            spirit.bonusStats.speed.takeIf { it > 0 }?.let { "速度+$it" },
+            spirit.focusXpBonusPercent.takeIf { it > 0 }?.let { "伴读专注经验+$it%" },
+            spirit.inkBonusPercent.takeIf { it > 0 }?.let { "伴读墨晶+$it%" },
+            spirit.goldBonusPercent.takeIf { it > 0 }?.let { "伴读金币+$it%" }
+        ).joinToString(" · ")
+
+        Dialog(
+            onDismissRequest = { inspectedSpirit = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = DreamTrailColors.CardSurface,
+                border = BorderStroke(1.5.dp, regionAccentColor(spirit.regionId).copy(alpha = 0.65f)),
+                modifier = Modifier
+                    .padding(horizontal = 20.dp, vertical = 24.dp)
+                    .widthIn(max = 520.dp)
+                    .fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FocusSpiritAvatar(spirit = spirit, size = 56.dp, unlocked = unlocked, active = isActive)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(if (unlocked) "${spirit.name} · ${spirit.title}" else "未结识小灵兽", style = MaterialTheme.typography.titleMedium, color = DreamTrailColors.ParchmentText)
+                            TagBadge("${spirit.regionId.displayName} · ${spirit.preferredSoundscape}", regionAccentColor(spirit.regionId))
+                        }
+                        IconButton(onClick = { inspectedSpirit = null }) {
+                            Icon(Icons.Rounded.Close, contentDescription = "关闭", tint = DreamTrailColors.MutedInk)
+                        }
+                    }
+                    Text(
+                        text = if (unlocked) spirit.description else "前往${spirit.regionId.displayName}进行探索或白昼专注，即有机会结识这只小灵兽。",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = DreamTrailColors.MutedInk
+                    )
+                    Text(
+                        text = "效果：$bonuses",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (unlocked) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
+                    )
+                    if (unlocked) {
+                        androidx.compose.material3.Button(
+                            onClick = {
+                                onSelectSpirit(if (isActive) null else spirit.id)
+                                inspectedSpirit = null
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isActive) "取消伴读" else "设为书桌伴读")
+                        }
+                    }
                 }
             }
         }

@@ -93,7 +93,7 @@ for other_unit in "$build_unit" "$emulator_unit"; do
 done
 
 env_options=()
-for variable in JAVA_HOME ANDROID_HOME ANDROID_AVD_HOME DREAMTRAIL_SIGNING_PROPERTIES; do
+for variable in JAVA_HOME ANDROID_HOME ANDROID_AVD_HOME ANDROID_EMULATOR_HOME ANDROID_ADB_SERVER_PORT DREAMTRAIL_SIGNING_PROPERTIES; do
     if [[ -n ${!variable:-} ]]; then env_options+=("--setenv=$variable=${!variable}"); fi
 done
 if systemctl --user is-failed --quiet "$unit"; then

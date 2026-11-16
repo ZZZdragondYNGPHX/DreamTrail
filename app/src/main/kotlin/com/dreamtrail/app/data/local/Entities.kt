@@ -30,7 +30,15 @@ data class ExpeditionSessionEntity(
     @ColumnInfo(name = "rules_version") val rulesVersion: Int,
     @ColumnInfo(name = "snapshot_json") val snapshotJson: String,
     @ColumnInfo(name = "is_onboarding") val isOnboarding: Boolean,
-    @ColumnInfo(name = "night_phenomenon_json") val nightPhenomenonJson: String? = null
+    @ColumnInfo(name = "night_phenomenon_json") val nightPhenomenonJson: String? = null,
+    @ColumnInfo(name = "session_mode", defaultValue = "'SLEEP'") val sessionMode: String = "SLEEP",
+    @ColumnInfo(name = "target_duration_sec") val targetDurationSec: Long? = null,
+    @ColumnInfo(name = "focus_tag_id") val focusTagId: String? = null,
+    @ColumnInfo(name = "linked_task_id") val linkedTaskId: String? = null,
+    @ColumnInfo(name = "day_phenomenon_json") val dayPhenomenonJson: String? = null,
+    @ColumnInfo(name = "distraction_count", defaultValue = "0") val distractionCount: Int = 0,
+    @ColumnInfo(name = "flip_focus_sec", defaultValue = "0") val flipFocusSec: Long = 0L,
+    @ColumnInfo(name = "zone_id") val zoneId: String = "UTC"
 )
 
 @Entity(tableName = "settlements")
@@ -90,7 +98,14 @@ data class AppSettingsEntity(
     @PrimaryKey val id: Int = 1,
     @ColumnInfo(name = "font_scale_level") val fontScaleLevel: Int = 0,
     val muted: Boolean = true,
-    @ColumnInfo(name = "reduce_motion") val reduceMotion: Boolean = false
+    @ColumnInfo(name = "reduce_motion") val reduceMotion: Boolean = false,
+    @ColumnInfo(name = "theme_mode", defaultValue = "'NIGHT_INK'") val themeMode: String = "NIGHT_INK",
+    @ColumnInfo(name = "soundscape_channel", defaultValue = "'NONE'") val soundscapeChannel: String = "NONE",
+    @ColumnInfo(name = "soundscape_volume", defaultValue = "60") val soundscapeVolume: Int = 60,
+    @ColumnInfo(name = "soundscape_fade_min", defaultValue = "0") val soundscapeFadeMinutes: Int = 0,
+    @ColumnInfo(name = "flip_focus_enabled", defaultValue = "0") val flipFocusEnabled: Boolean = false,
+    @ColumnInfo(name = "default_pomodoro_min", defaultValue = "25") val defaultPomodoroMinutes: Int = 25,
+    @ColumnInfo(name = "default_nap_min", defaultValue = "30") val defaultNapMinutes: Int = 30
 )
 
 // Device-local authorization state, deliberately excluded from game backups.

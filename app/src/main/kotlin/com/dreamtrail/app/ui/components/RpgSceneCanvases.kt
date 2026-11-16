@@ -238,11 +238,12 @@ enum class CampStation(val label: String, val facility: FacilityType?) {
     CONSERVATORY("星尘花房", FacilityType.CONSERVATORY),
     MAP_TABLE("地图桌", FacilityType.MAP_TABLE),
     INN("旅舍", FacilityType.INN),
+    SCRIPTORIUM("研习书斋", FacilityType.SCRIPTORIUM),
     COMMISSIONS("委托榜", null)
 }
 
 /**
- * 2D 营地全景沙盘：绘制夜空营地与 6 处互动建筑/告示板，建筑外观随等级进化，可点击切换工作台。
+ * 2D 营地全景沙盘：绘制夜空营地与 7 处互动建筑/告示板，建筑外观随等级进化，可点击切换工作台。
  */
 @Composable
 fun CampDioramaCanvas(
@@ -253,12 +254,13 @@ fun CampDioramaCanvas(
     modifier: Modifier = Modifier
 ) {
     val stationsLayout = listOf(
-        CampStation.MAP_TABLE to (0.17f to 0.34f),
-        CampStation.INN to (0.50f to 0.28f),
-        CampStation.CONSERVATORY to (0.83f to 0.34f),
-        CampStation.WORKSHOP to (0.20f to 0.72f),
-        CampStation.TEA_HEARTH to (0.52f to 0.74f),
-        CampStation.COMMISSIONS to (0.83f to 0.72f)
+        CampStation.MAP_TABLE to (0.17f to 0.19f),
+        CampStation.INN to (0.50f to 0.18f),
+        CampStation.CONSERVATORY to (0.83f to 0.19f),
+        CampStation.SCRIPTORIUM to (0.17f to 0.50f),
+        CampStation.COMMISSIONS to (0.83f to 0.50f),
+        CampStation.WORKSHOP to (0.28f to 0.81f),
+        CampStation.TEA_HEARTH to (0.72f to 0.81f)
     )
 
     val unlockedCompanionCount = ContentCatalog.companionStories.count {
@@ -274,7 +276,7 @@ fun CampDioramaCanvas(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(220.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
+                .height(256.dp * LocalDensity.current.fontScale.coerceAtLeast(1f))
         ) {
             val nodeWidth = (maxWidth * 0.28f).coerceAtMost(92.dp)
             val density = LocalDensity.current
@@ -326,10 +328,17 @@ fun CampDioramaCanvas(
                     if (lv >= 5) false else {
                         val target = lv + 1
                         val reqHours = ContentCatalog.facilityRequiredExploreHours(f, target)
-                        val (gCost, matPair) = ContentCatalog.facilityUpgradeCost(f, target)
-                        discoveryState.totalCreditedSeconds >= reqHours * 3600L &&
-                            playerState.resources.gold >= gCost &&
-                            playerState.resources.materialCount(matPair.first) >= matPair.second
+                        if (f == FacilityType.SCRIPTORIUM) {
+                            val (gCost, inkCost) = ContentCatalog.facilityScriptoriumCost(target)
+                            val timeOk = discoveryState.totalCreditedSeconds >= reqHours * 3600L ||
+                                discoveryState.totalFocusCreditedSeconds >= target * 4 * 3600L
+                            timeOk && playerState.resources.gold >= gCost && playerState.resources.inspirationInk >= inkCost
+                        } else {
+                            val (gCost, matPair) = ContentCatalog.facilityUpgradeCost(f, target)
+                            discoveryState.totalCreditedSeconds >= reqHours * 3600L &&
+                                playerState.resources.gold >= gCost &&
+                                playerState.resources.materialCount(matPair.first) >= matPair.second
+                        }
                     }
                 } ?: false
 
@@ -495,6 +504,12 @@ private fun DrawScope.drawCampStationBuilding(station: CampStation, level: Int) 
                 drawCircle(DreamTrailColors.LanternAmber, radius = w * 0.09f, center = Offset(w * 0.66f, h * 0.34f))
             }
         }
+        CampStation.SCRIPTORIUM -> {
+            // Sunlit study pavilion & bookshelf
+            drawRect(if (lit) Color(0xFFE6B455) else bodyColor, Offset(w * 0.22f, h * 0.26f), Size(w * 0.56f, h * 0.14f))
+            drawRect(bodyColor.copy(alpha = 0.85f), Offset(w * 0.26f, h * 0.40f), Size(w * 0.48f, h * 0.50f))
+            drawRect(if (lit) DreamTrailColors.ParchmentText else bodyColor, Offset(w * 0.36f, h * 0.50f), Size(w * 0.28f, h * 0.24f))
+        }
         CampStation.COMMISSIONS -> {
             // Notice board with pinned parchments
             drawRect(Color(0xFF7B573C), Offset(w * 0.18f, h * 0.18f), Size(w * 0.64f, h * 0.56f))
@@ -507,7 +522,7 @@ private fun DrawScope.drawCampStationBuilding(station: CampStation, level: Int) 
 }
 
 /**
- * 2D 旅人星盘画布：中心罗盘向 4 大流派象限伸展连线星点，点击星点查看详情或点亮。
+ * 2D 旅人星盘画布：中心罗盘向 4 大流派象限伸展 4 阶连线星点，点击星点查看详情或点亮。
  */
 @Composable
 fun AstralConstellationCanvas(
@@ -517,10 +532,10 @@ fun AstralConstellationCanvas(
     modifier: Modifier = Modifier
 ) {
     val branchTargets = mapOf(
-        BuildArchetype.BASTION to listOf(0.35f to 0.38f, 0.23f to 0.27f, 0.13f to 0.17f),
-        BuildArchetype.GALE to listOf(0.65f to 0.38f, 0.77f to 0.27f, 0.87f to 0.17f),
-        BuildArchetype.DREAMWEAVE to listOf(0.35f to 0.62f, 0.23f to 0.73f, 0.13f to 0.83f),
-        BuildArchetype.SCHOLAR to listOf(0.65f to 0.62f, 0.77f to 0.73f, 0.87f to 0.83f)
+        BuildArchetype.BASTION to listOf(0.38f to 0.39f, 0.28f to 0.29f, 0.19f to 0.20f, 0.10f to 0.12f),
+        BuildArchetype.GALE to listOf(0.62f to 0.39f, 0.72f to 0.29f, 0.81f to 0.20f, 0.90f to 0.12f),
+        BuildArchetype.DREAMWEAVE to listOf(0.38f to 0.61f, 0.28f to 0.71f, 0.19f to 0.80f, 0.10f to 0.88f),
+        BuildArchetype.SCHOLAR to listOf(0.62f to 0.61f, 0.72f to 0.71f, 0.81f to 0.80f, 0.90f to 0.88f)
     )
 
     Surface(
@@ -532,7 +547,7 @@ fun AstralConstellationCanvas(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(320.dp)
+                .height(370.dp)
         ) {
             val density = LocalDensity.current
             val widthPx = with(density) { maxWidth.toPx() }

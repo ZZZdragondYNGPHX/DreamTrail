@@ -34,11 +34,16 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dreamtrail.app.audio.SoundscapeChannel
+import com.dreamtrail.app.audio.SoundscapeEngine
+import com.dreamtrail.app.focus.FocusHardwareHelper
 import com.dreamtrail.app.ui.AppTab
 import com.dreamtrail.app.ui.DreamTrailViewModel
 import com.dreamtrail.app.ui.screens.*
 import com.dreamtrail.app.ui.theme.DreamTrailColors
 import com.dreamtrail.app.ui.theme.DreamTrailTheme
+import com.dreamtrail.app.ui.theme.ThemeMode
+import com.dreamtrail.core.model.SessionMode
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -116,16 +121,72 @@ class MainActivity : ComponentActivity() {
             var showSettings by rememberSaveable { mutableStateOf(false) }
             val isSleepingGuardActive = dataState.initialized && dataState.runningSession != null
 
+            val soundscapeEngine = remember { SoundscapeEngine() }
+            DisposableEffect(Unit) {
+                onDispose { soundscapeEngine.release() }
+            }
+            LaunchedEffect(
+                dataState.settings.soundscapeChannel,
+                dataState.settings.soundscapeVolume,
+                dataState.settings.muted,
+                dataState.settings.soundscapeFadeMinutes
+            ) {
+                soundscapeEngine.applyConfig(
+                    channel = SoundscapeChannel.fromId(dataState.settings.soundscapeChannel),
+                    volume = dataState.settings.soundscapeVolume,
+                    muted = dataState.settings.muted,
+                    fadeOutMinutes = dataState.settings.soundscapeFadeMinutes
+                )
+            }
+
+            val focusHardwareHelper = remember {
+                FocusHardwareHelper(applicationContext) { faceDown ->
+                    viewModel.setFaceDownActive(faceDown)
+                }
+            }
+            var isResumed by remember { mutableStateOf(false) }
+            val listenFlip = isResumed &&
+                dataState.initialized &&
+                dataState.runningSession?.sessionMode?.isFocus == true &&
+                dataState.settings.flipFocusEnabled
+            DisposableEffect(listenFlip) {
+                focusHardwareHelper.setListening(listenFlip)
+                onDispose { focusHardwareHelper.stopListening() }
+            }
+
+            var handledCountdownSessionId by rememberSaveable { mutableStateOf<String?>(null) }
+            LaunchedEffect(dataState.runningSession?.sessionId, uiState.targetCountdownFinished) {
+                val r = dataState.runningSession
+                if (r == null) {
+                    handledCountdownSessionId = null
+                } else if (uiState.targetCountdownFinished && handledCountdownSessionId != r.sessionId) {
+                    handledCountdownSessionId = r.sessionId
+                    soundscapeEngine.playCompletionChime(dataState.settings.muted)
+                    FocusHardwareHelper.notifyCountdownComplete(
+                        this@MainActivity,
+                        "${r.sessionMode.displayName}已达成目标",
+                        if (r.sessionMode == SessionMode.POWER_NAP) {
+                            "小憩目标已达成，返回可结束休息并查看收获。"
+                        } else {
+                            "点击返回可结算战报，或继续延长进入心流积累。"
+                        }
+                    )
+                }
+            }
+
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
                     when (event) {
                         Lifecycle.Event.ON_RESUME -> {
+                            isResumed = true
                             leavingSessionId = null
                             viewModel.setForegroundActive(true)
                             refreshScreenPinState()
                         }
                         Lifecycle.Event.ON_PAUSE -> {
+                            isResumed = false
+                            focusHardwareHelper.stopListening()
                             viewModel.setForegroundActive(false)
                         }
                         else -> Unit
@@ -133,6 +194,8 @@ class MainActivity : ComponentActivity() {
                 }
                 lifecycleOwner.lifecycle.addObserver(observer)
                 onDispose {
+                    isResumed = false
+                    focusHardwareHelper.stopListening()
                     viewModel.setForegroundActive(false)
                     lifecycleOwner.lifecycle.removeObserver(observer)
                 }
@@ -181,7 +244,11 @@ class MainActivity : ComponentActivity() {
                 when {
                     uiState.sleepBlackoutMode -> viewModel.setSleepBlackoutMode(false)
                     uiState.showWakeConfirm -> viewModel.setShowWakeConfirm(false)
-                    else -> viewModel.onSleepGuardScreenTap()
+                    else -> if (dataState.runningSession?.sessionMode != SessionMode.SLEEP) {
+                        viewModel.setShowWakeConfirm(true)
+                    } else {
+                        viewModel.onSleepGuardScreenTap()
+                    }
                 }
             }
 
@@ -202,7 +269,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            DreamTrailTheme(fontScaleLevel = dataState.settings.fontScaleLevel) {
+            DreamTrailTheme(
+                fontScaleLevel = dataState.settings.fontScaleLevel,
+                themeMode = ThemeMode.fromId(dataState.settings.themeMode),
+                isFocusActive = dataState.runningSession?.sessionMode?.isFocus ?: uiState.selectedMode.isFocus
+            ) {
+                val lightSystemBars = DreamTrailColors.activePalette.isLight &&
+                    !(isSleepingGuardActive && uiState.sleepBlackoutMode)
+                DisposableEffect(lightSystemBars) {
+                    val updateBars = Runnable {
+                        val controller = WindowCompat.getInsetsController(window, window.decorView)
+                        controller.isAppearanceLightStatusBars = lightSystemBars
+                        controller.isAppearanceLightNavigationBars = lightSystemBars
+                    }
+                    window.decorView.post(updateBars)
+                    onDispose { window.decorView.removeCallbacks(updateBars) }
+                }
                 var currentTab by rememberSaveable { mutableStateOf(AppTab.JOURNEY) }
                 val tabStateHolder = rememberSaveableStateHolder()
                 val snackbarHostState = remember { SnackbarHostState() }
@@ -218,19 +300,41 @@ class MainActivity : ComponentActivity() {
 
                 val running = dataState.runningSession
                 if (isSleepingGuardActive && running != null) {
-                    SleepGuardScreen(
-                        running = running,
-                        uiState = uiState,
-                        reduceMotion = dataState.settings.reduceMotion,
-                        onExitBlackout = { viewModel.setSleepBlackoutMode(false) },
-                        onEnterBlackout = { viewModel.setSleepBlackoutMode(true) },
-                        onToggleScreenPin = ::toggleScreenPin,
-                        onRequestWakeConfirm = viewModel::setShowWakeConfirm,
-                        onEndExpedition = viewModel::endExpedition,
-                        onCancelEarly = viewModel::cancelExpeditionEarly,
-                        onBackgroundTap = viewModel::onSleepGuardScreenTap,
-                        onRetrySettlement = viewModel::retryFailedAction
-                    )
+                    if (running.sessionMode == SessionMode.SLEEP) {
+                        SleepGuardScreen(
+                            running = running,
+                            uiState = uiState,
+                            reduceMotion = dataState.settings.reduceMotion,
+                            onExitBlackout = { viewModel.setSleepBlackoutMode(false) },
+                            onEnterBlackout = { viewModel.setSleepBlackoutMode(true) },
+                            onToggleScreenPin = ::toggleScreenPin,
+                            onRequestWakeConfirm = viewModel::setShowWakeConfirm,
+                            onEndExpedition = viewModel::endExpedition,
+                            onCancelEarly = viewModel::cancelExpeditionEarly,
+                            onBackgroundTap = viewModel::onSleepGuardScreenTap,
+                            onRetrySettlement = viewModel::retryFailedAction
+                        )
+                    } else {
+                        val linkedTask = running.linkedTaskId?.let { tid ->
+                            dataState.playerState.focusTasks.firstOrNull { it.id == tid }
+                        }
+                        FocusGuardScreen(
+                            running = running,
+                            uiState = uiState,
+                            reduceMotion = dataState.settings.reduceMotion,
+                            muted = dataState.settings.muted,
+                            soundscapeChannelName = SoundscapeChannel.fromId(dataState.settings.soundscapeChannel).displayName,
+                            flipEnabled = dataState.settings.flipFocusEnabled,
+                            onToggleScreenPin = ::toggleScreenPin,
+                            onOpenSoundscape = { viewModel.setSoundscapeSheetOpen(true) },
+                            onOpenBreathing = { viewModel.setBreathingDialogOpen(true) },
+                            onRequestEndConfirm = viewModel::setShowWakeConfirm,
+                            onEndExpedition = viewModel::endExpedition,
+                            onCancelEarly = viewModel::cancelExpeditionEarly,
+                            onRetrySettlement = viewModel::retryFailedAction,
+                            linkedTask = linkedTask
+                        )
+                    }
                 } else {
                     Scaffold(
                     containerColor = DreamTrailColors.NightBackground,
@@ -239,15 +343,28 @@ class MainActivity : ComponentActivity() {
                         TopAppBar(
                             title = {
                                 Text(
-                                    text = "梦途",
+                                    text = "昼梦途",
                                     style = MaterialTheme.typography.titleLarge,
-                                    color = DreamTrailColors.ParchmentText
+                                    color = DreamTrailColors.ParchmentText,
+                                    maxLines = 1
                                 )
                             },
                             colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = DreamTrailColors.CardSurface
                             ),
                             actions = {
+                                TextButton(
+                                    onClick = { viewModel.setStatsSheetOpen(true) },
+                                    modifier = Modifier.heightIn(min = 48.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.BarChart,
+                                        contentDescription = null,
+                                        tint = DreamTrailColors.SageMist
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("统计", color = DreamTrailColors.ParchmentText, maxLines = 1)
+                                }
                                 TextButton(
                                     onClick = { showSettings = true },
                                     modifier = Modifier.heightIn(min = 48.dp)
@@ -258,7 +375,7 @@ class MainActivity : ComponentActivity() {
                                         tint = DreamTrailColors.LanternAmber
                                     )
                                     Spacer(Modifier.width(4.dp))
-                                    Text("设置与存档", color = DreamTrailColors.ParchmentText)
+                                    Text("设置", color = DreamTrailColors.ParchmentText, maxLines = 1)
                                 }
                             }
                         )
@@ -350,7 +467,24 @@ class MainActivity : ComponentActivity() {
                                             onSelectTeaBlend = viewModel::selectTeaBlend,
                                             onSelectDreamBeaconTier = viewModel::selectDreamBeaconTier,
                                             onResolveMorningEcho = viewModel::resolveMorningEcho,
-                                            onApplyLoadout = viewModel::applyLoadout
+                                            onApplyLoadout = viewModel::applyLoadout,
+                                            onSelectMode = viewModel::selectMode,
+                                            onSelectPomodoroMinutes = viewModel::selectPomodoroMinutes,
+                                            onSelectNapMinutes = viewModel::selectNapMinutes,
+                                            onResolveTeaEcho = viewModel::resolveTeaEcho,
+                                            onSelectSpirit = viewModel::selectFocusSpirit,
+                                            onSelectFocusTag = viewModel::selectFocusTag,
+                                            onAddCustomFocusTag = viewModel::addCustomFocusTag,
+                                            onAddFocusTask = viewModel::addFocusTask,
+                                            onCompleteFocusTask = viewModel::completeFocusTask,
+                                            onDeleteFocusTask = viewModel::deleteFocusTask,
+                                            onClearCompletedFocusTasks = viewModel::clearCompletedFocusTasks,
+                                            onSelectActiveFocusTask = viewModel::selectActiveFocusTask,
+                                            onOpenSoundscape = { viewModel.setSoundscapeSheetOpen(true) },
+                                            onOpenBreathing = { viewModel.setBreathingDialogOpen(true) },
+                                            onSkipBreak = viewModel::skipBreakTimer,
+                                            onSelectMood = viewModel::saveReflectionMood,
+                                            onStartBreak = viewModel::startBreakTimer
                                         )
                                         AppTab.CHARACTER -> CharacterScreen(
                                             dataState = dataState,
@@ -386,7 +520,8 @@ class MainActivity : ComponentActivity() {
                                         )
                                         AppTab.COMPENDIUM -> CompendiumScreen(
                                             dataState = dataState,
-                                            onNavigateToCompanions = { currentTab = AppTab.COMPANIONS }
+                                            onNavigateToCompanions = { currentTab = AppTab.COMPANIONS },
+                                            onSelectSpirit = viewModel::selectFocusSpirit
                                         )
                                     }
                                 }
@@ -404,7 +539,7 @@ class MainActivity : ComponentActivity() {
                             onUpdateSettings = viewModel::updateSettings,
                             onCopyBackup = viewModel::copyBackup,
                             onExportToFile = {
-                                exportDocLauncher.launch("dreamtrail-backup.json")
+                                exportDocLauncher.launch("solunatrail-backup.json")
                             },
                             onRequestImportFile = {
                                 importDocLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
@@ -414,6 +549,31 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { showSettings = false }
                         )
                     }
+                }
+
+                if (uiState.isSoundscapeSheetOpen) {
+                    SoundscapeSheet(
+                        settings = dataState.settings,
+                        onUpdateSettings = viewModel::updateSettings,
+                        onDismiss = { viewModel.setSoundscapeSheetOpen(false) }
+                    )
+                }
+                if (uiState.isBreathingDialogOpen) {
+                    BreathingGuideDialog(
+                        reduceMotion = dataState.settings.reduceMotion,
+                        initialPattern = if (dataState.runningSession?.sessionMode?.isFocus ?: uiState.selectedMode.isFocus) {
+                            BreathingPattern.BOX_4444
+                        } else {
+                            BreathingPattern.SLEEP_478
+                        },
+                        onDismiss = { viewModel.setBreathingDialogOpen(false) }
+                    )
+                }
+                if (uiState.isStatsSheetOpen) {
+                    StatsJournalSheet(
+                        dataState = dataState,
+                        onDismiss = { viewModel.setStatsSheetOpen(false) }
+                    )
                 }
             }
         }

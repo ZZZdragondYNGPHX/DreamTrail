@@ -50,7 +50,8 @@ object CombatSimulator {
         enemies: List<EnemyDef>,
         rng: DeterministicRng,
         nightPhenomenon: NightPhenomenon? = null,
-        eliteTrait: EliteTrait? = null
+        eliteTrait: EliteTrait? = null,
+        dayPhenomenon: DayPhenomenon? = null
     ): CombatResult {
         require(enemies.isNotEmpty() && enemies.size <= 3) { "Encounter must have 1..3 enemies" }
 
@@ -76,18 +77,27 @@ object CombatSimulator {
         if (AffixId.COUNTER_PULSE in affixes) openingShield += 8
         if (AffixId.THORN_BASTION in affixes) openingShield += 6
         if (AffixId.SANCTUARY_BULWARK in affixes) openingShield += 10
+        if (AffixId.POISE_WARD in affixes) openingShield += 14
         if (AffixId.RAIN_WARD in affixes && (route.environmentTag == EnvironmentTag.DAMP || route.environmentTag == EnvironmentTag.CHILL)) {
             openingShield += 12
         }
         if ("passive_forest_ward" in passives) openingShield += 12
         if ("passive_ember_resolve" in passives) openingShield += 8
         if ("passive_amber_anchor" in passives) openingShield += 14
+        if ("passive_sunlit_focus" in passives) {
+            openingShield += 14
+            if (route.environmentTag == EnvironmentTag.SUNLIT || route.environmentTag == EnvironmentTag.DAWNLIGHT) {
+                playerDef += 6
+            }
+        }
         if ("passive_cloud_aegis" in passives) {
             openingShield += 10
             if (route.environmentTag == EnvironmentTag.CLOUD) playerDef += 5
         }
         if ("keepsake_everwarm_kettle" in snapshot.unlockedKeepsakeIds) openingShield += 8
+        if (snapshot.nightPrepTier >= 3) openingShield += 15
         if (AffixId.CLOUD_WALKER in affixes) playerSpd += 3
+        if (AffixId.POMO_BLITZ in affixes) playerSpd += 4
         if ("passive_tidal_stride" in passives) {
             if (route.environmentTag == EnvironmentTag.DAMP) playerDef += 4
         }
@@ -152,6 +162,8 @@ object CombatSimulator {
             "comp_noah" -> openingShield += (12 * assistScale).roundToInt()
             "comp_xiu" -> openingShield += (16 * assistScale).roundToInt()
             "comp_cen" -> openingShield += (12 * assistScale).roundToInt()
+            "comp_wen" -> openingShield += (18 * assistScale).roundToInt()
+            "comp_zhaolu" -> playerSpd += (4 * assistScale).roundToInt()
         }
         // Rank 5 non-active companion passive opening aura (50% effect)
         for ((compId, aff) in snapshot.companionAffinity) {
@@ -162,11 +174,13 @@ object CombatSimulator {
                     "comp_lin" -> openingShield += 5
                     "comp_xiu" -> openingShield += 8
                     "comp_cen" -> openingShield += 6
+                    "comp_wen" -> openingShield += 9
+                    "comp_zhaolu" -> playerSpd += 2
                 }
             }
         }
 
-        // Night Phenomenon combat blessing
+        // Night / Day Phenomenon combat blessing
         if (nightPhenomenon != null &&
             (nightPhenomenon.favoredRegionId == route.regionId || nightPhenomenon.favoredEnvironment == route.environmentTag)
         ) {
@@ -175,6 +189,16 @@ object CombatSimulator {
             }
             if (nightPhenomenon.combatDefPercent > 0) {
                 playerDef = (playerDef * (1.0 + nightPhenomenon.combatDefPercent / 100.0)).roundToInt()
+            }
+        }
+        if (dayPhenomenon != null &&
+            (dayPhenomenon.favoredRegionId == route.regionId || dayPhenomenon.favoredEnvironment == route.environmentTag)
+        ) {
+            if (dayPhenomenon.combatAtkPercent > 0) {
+                playerAtk = (playerAtk * (1.0 + dayPhenomenon.combatAtkPercent / 100.0)).roundToInt()
+            }
+            if (dayPhenomenon.combatDefPercent > 0) {
+                playerDef = (playerDef * (1.0 + dayPhenomenon.combatDefPercent / 100.0)).roundToInt()
             }
         }
 
@@ -238,6 +262,7 @@ object CombatSimulator {
             (route.environmentTag == EnvironmentTag.DAMP || route.environmentTag == EnvironmentTag.CHILL)
         val cloudWalkerTriggered = AffixId.CLOUD_WALKER in affixes &&
             (route.environmentTag == EnvironmentTag.CLOUD || route.environmentTag == EnvironmentTag.FOREST)
+        val poiseWardTriggered = AffixId.POISE_WARD in affixes
         var firstStrikeTriggered = false
         var comboTriggered = false
         var thornReflected = false
@@ -299,8 +324,17 @@ object CombatSimulator {
                         shieldStrikeTriggered = true
                     }
                     var totalDefIgnore = defIgnoreRatio
+                    if (AffixId.INK_SCHOLAR in affixes) {
+                        totalDefIgnore = (totalDefIgnore + 0.12).coerceAtMost(0.80)
+                    }
+                    if ("passive_archivist_eye" in passives) {
+                        totalDefIgnore = (totalDefIgnore + 0.08).coerceAtMost(0.80)
+                    }
+                    if (companion?.id == "comp_wen") {
+                        totalDefIgnore = (totalDefIgnore + 0.12 * assistScale).coerceAtMost(0.82)
+                    }
                     if (AffixId.CHRONO_STRIKE in affixes && (rounds == 1 || playerSpeedThisRound > target.speed)) {
-                        totalDefIgnore = (totalDefIgnore + 0.20).coerceAtMost(0.75)
+                        totalDefIgnore = (totalDefIgnore + 0.20).coerceAtMost(0.82)
                     }
                     val effTargetDef = (target.defense * (1.0 - totalDefIgnore)).roundToInt()
                     var dmg = computeDamage(actor.attack, coeff, effTargetDef)
@@ -323,9 +357,17 @@ object CombatSimulator {
                         applyDamage(target, followDmg)
                         comboTriggered = true
                     }
-                    // Chrono Step 4th-round pierce follow-up
+                    // Passive and affix follow-up attacks.
                     if (target.hp > 0 && "passive_chrono_step" in passives && rounds % 4 == 0) {
                         applyDamage(target, computeDamage(actor.attack, 0.30, effTargetDef))
+                    }
+                    if (target.hp > 0 && "passive_quill_tempo" in passives && rounds % 3 == 0) {
+                        applyDamage(target, computeDamage(actor.attack, 0.32, effTargetDef))
+                        comboTriggered = true
+                    }
+                    if (target.hp > 0 && AffixId.POMO_BLITZ in affixes && rounds % 3 == 0 && playerSpeedThisRound > target.speed) {
+                        applyDamage(target, computeDamage(actor.attack, 0.40, effTargetDef))
+                        comboTriggered = true
                     }
 
                     // Companion active combat assist
@@ -340,6 +382,9 @@ object CombatSimulator {
                             }
                             "comp_cen" -> if (rounds % 3 == 0) {
                                 applyDamage(target, computeDamage(actor.attack, 0.30 * assistScale, effTargetDef))
+                            }
+                            "comp_zhaolu" -> if (rounds % 2 == 0) {
+                                applyDamage(target, computeDamage(actor.attack, 0.26 * assistScale, effTargetDef))
                             }
                         }
                     }
@@ -369,6 +414,9 @@ object CombatSimulator {
                     }
                     if (cloudWalkerTriggered) {
                         rawDmg = max(1, floor(rawDmg * 0.88).toInt())
+                    }
+                    if (poiseWardTriggered) {
+                        rawDmg = max(1, floor(rawDmg * 0.90).toInt())
                     }
                     val blocked = minOf(playerUnit.shield, rawDmg)
                     shieldAbsorbed += blocked
@@ -424,6 +472,24 @@ object CombatSimulator {
                                 applyDamage(playerUnit, chronoDmg)
                                 bossTraitTriggerCounts[enemyIdx]++
                             }
+                            BossTrait.INK_BARRIER -> if (rounds % 3 == 0) {
+                                actor.shield += max(18, (actor.maxHp * 0.10).roundToInt())
+                                val inkDmg = computeDamage(effectiveEnemyAtk, 0.34, playerUnit.defense)
+                                shieldAbsorbed += minOf(playerUnit.shield, inkDmg)
+                                applyDamage(playerUnit, inkDmg)
+                                bossTraitTriggerCounts[enemyIdx]++
+                            }
+                            BossTrait.SOLUNA_ECLIPSE -> if (rounds % 3 == 0) {
+                                if (bossTraitTriggerCounts[enemyIdx] % 2 == 0) {
+                                    val solarDmg = computeDamage(effectiveEnemyAtk, 0.38, playerUnit.defense)
+                                    shieldAbsorbed += minOf(playerUnit.shield, solarDmg)
+                                    applyDamage(playerUnit, solarDmg)
+                                } else {
+                                    actor.hp = minOf(actor.maxHp, actor.hp + max(14, (actor.maxHp * 0.05).roundToInt()))
+                                    actor.shield += max(20, (actor.maxHp * 0.10).roundToInt())
+                                }
+                                bossTraitTriggerCounts[enemyIdx]++
+                            }
                             BossTrait.STAR_JUDGMENT -> Unit
                         }
                     }
@@ -459,6 +525,11 @@ object CombatSimulator {
                 }
                 if (AffixId.LUCID_PULSE in affixes && rounds % 2 == 0) {
                     playerUnit.hp = minOf(playerUnit.maxHp, playerUnit.hp + max(4, (playerUnit.maxHp * 0.06).roundToInt()))
+                    resonanceTriggered = true
+                }
+                if (AffixId.SOLUNA_DEW in affixes && rounds % 2 == 0) {
+                    playerUnit.hp = minOf(playerUnit.maxHp, playerUnit.hp + max(1, (playerUnit.maxHp * 0.05).roundToInt()))
+                    playerUnit.shield += 6
                     resonanceTriggered = true
                 }
                 if (AffixId.SANCTUARY_BULWARK in affixes && playerUnit.shield < 14) {

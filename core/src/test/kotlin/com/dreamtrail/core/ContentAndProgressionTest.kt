@@ -84,7 +84,7 @@ class ContentAndProgressionTest {
     }
 
     @Test
-    fun `xp curve scales cleanly and caps at level 50`() {
+    fun `xp curve scales cleanly and caps at level 65`() {
         assertEquals(60L, ProgressionEngine.xpRequiredForNextLevel(1))
         assertEquals(72L, ProgressionEngine.xpRequiredForNextLevel(2))
 
@@ -92,8 +92,8 @@ class ContentAndProgressionTest {
         assertEquals(3, lvl)
         assertEquals(10L, remXp)
 
-        val (maxLvl, maxRem) = ProgressionEngine.applyXp(49, 0L, 1_000_000_000L)
-        assertEquals(50, maxLvl)
+        val (maxLvl, maxRem) = ProgressionEngine.applyXp(64, 0L, 1_000_000_000L)
+        assertEquals(65, maxLvl)
         assertEquals(0L, maxRem)
     }
 

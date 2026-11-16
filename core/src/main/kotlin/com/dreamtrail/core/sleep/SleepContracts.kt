@@ -380,3 +380,78 @@ object SleepBuffPolicy {
         return nowUtcMs >= sessionEndUtcMs && (nowUtcMs - sessionEndUtcMs) <= SEVEN_DAYS_MS
     }
 }
+
+/**
+ * Inclusive positive-reinforcement poise bonus policy for daytime focus sessions:
+ * - Guaranteed base +3.00% (300 bps) regardless of distractions
+ * - Uninterrupted >=15m focus grants +8.00% (800 bps), plus up to +2.00% for finishing target,
+ *   flip-to-focus, Scriptorium >= Lv.3, or POISE_WARD affix (max 1000 bps = +10.00%)
+ * - Minor distractions smoothly step down bonus without ever penalizing base yields
+ */
+object FocusPoisePolicy {
+    const val MIN_BASIS_POINTS = 300
+    const val MAX_FOCUS_BASIS_POINTS = 1000
+
+    fun computeFocusBuff(
+        baseGold: Long,
+        baseXp: Long,
+        creditedSeconds: Long,
+        targetDurationSeconds: Long? = null,
+        distractionCount: Int = 0,
+        flipFocusSeconds: Long = 0L,
+        scriptoriumLevel: Int = 0,
+        hasPoiseWard: Boolean = false,
+        goldRemainder: Long = 0L,
+        xpRemainder: Long = 0L
+    ): SleepBuffComputation {
+        val totalBps = previewBasisPoints(
+            elapsedSeconds = creditedSeconds,
+            targetDurationSeconds = targetDurationSeconds,
+            distractionCount = distractionCount,
+            flipFocusSeconds = flipFocusSeconds,
+            scriptoriumLevel = scriptoriumLevel,
+            hasPoiseWard = hasPoiseWard
+        )
+        return SleepBuffComputation(
+            totalBasisPoints = totalBps,
+            targetBlessingGold = blessing(baseGold, totalBps, goldRemainder),
+            targetBlessingXp = blessing(baseXp, totalBps, xpRemainder)
+        )
+    }
+
+    fun previewBasisPoints(
+        elapsedSeconds: Long,
+        targetDurationSeconds: Long? = null,
+        distractionCount: Int = 0,
+        flipFocusSeconds: Long = 0L,
+        scriptoriumLevel: Int = 0,
+        hasPoiseWard: Boolean = false
+    ): Int {
+        val safeDistractions = distractionCount.coerceAtLeast(0)
+        val rawBps = if (elapsedSeconds < 900L) {
+            if (safeDistractions == 0) 500 else MIN_BASIS_POINTS
+        } else {
+            when (safeDistractions) {
+                0 -> {
+                    var bonus = 800
+                    if (targetDurationSeconds != null && elapsedSeconds >= targetDurationSeconds) {
+                        bonus += 100
+                    }
+                    if (flipFocusSeconds >= 300L || scriptoriumLevel >= 3) {
+                        bonus += 100
+                    }
+                    bonus
+                }
+                1 -> 600
+                2 -> 450
+                else -> MIN_BASIS_POINTS
+            }
+        }
+        return (rawBps + if (hasPoiseWard) 100 else 0).coerceIn(MIN_BASIS_POINTS, MAX_FOCUS_BASIS_POINTS)
+    }
+
+    private fun blessing(amount: Long, bps: Int, remainder: Long): Long {
+        val safe = amount.coerceAtLeast(0L)
+        return safe / 10000L * bps + (safe % 10000L * bps + remainder.coerceIn(0L, 9999L)) / 10000L
+    }
+}

@@ -3,12 +3,12 @@ package com.dreamtrail.core.content
 import com.dreamtrail.core.model.*
 
 /**
- * Versioned game content catalog for DreamTrail v4.
+ * Versioned game content catalog for SolunaTrail v5.
  * All names, stories, items, and enemies are original gentle-fantasy travelogue content.
  */
 object ContentCatalog {
-    const val CONTENT_VERSION = 4
-    const val RULES_VERSION = 4
+    const val CONTENT_VERSION = 5
+    const val RULES_VERSION = 5
 
     val passives: List<PassiveDef> = listOf(
         PassiveDef(
@@ -109,7 +109,7 @@ object ContentCatalog {
             unlockHint = "图鉴收录至少 24 种魔物或完成岑第 2 章故事解锁",
             archetype = BuildArchetype.SCHOLAR
         )
-    )
+    ) + SolunaContentExpansion.extraPassives
 
     val enemies: List<EnemyDef> = listOf(
         // Mistwood (6 normal + 1 boss)
@@ -165,7 +165,7 @@ object ContentCatalog {
         EnemyDef("enemy_halo_stag", "穹环白鹿影", RegionId.ASTRAL_ARCH, false, Stats(266, 62, 34, 26), 1.40, 28, "角冠浮现微光星环的虚影白鹿，仿佛雾林古老守望者的遥远回响。"),
         EnemyDef("enemy_arch_chronicler", "星拱记事偶", RegionId.ASTRAL_ARCH, false, Stats(292, 65, 40, 24), 1.40, 38, "执掌无尽手札铜盘的高阶星穹机关偶，试炼每一位踏入终拱的夜行人。"),
         EnemyDef("boss_astral_chronokeeper", "归梦时隙钟灵", RegionId.ASTRAL_ARCH, true, Stats(610, 68, 43, 26), 1.50, 74, "栖身归梦星拱至高日晷圣殿的古老守时之灵，以逆时星砂护持千夜安眠的边界。", bossTrait = BossTrait.CHRONO_RESONANCE)
-    )
+    ) + SolunaContentExpansion.extraEnemies
 
     val routes: List<RouteDef> = listOf(
         // Mistwood
@@ -517,7 +517,7 @@ object ContentCatalog {
             requiredExploreHours = 360,
             unlockDescription = "累计有效探索 360 小时，归梦星拱调查度 5"
         )
-    )
+    ) + SolunaContentExpansion.extraRoutes
 
     val equipmentDefs: List<EquipmentDef> = listOf(
         // Tier 1 (4 base items across all 3 slots)
@@ -956,7 +956,7 @@ object ContentCatalog {
             craftMaterialCost = 36L,
             requiredWorkshopLevel = 5
         )
-    )
+    ) + SolunaContentExpansion.extraEquipmentDefs
 
     val eventTemplates: List<EventTemplate> = listOf(
         // Mistwood (10 events)
@@ -1994,7 +1994,7 @@ object ContentCatalog {
             repeatText = "听完日晷圣殿响起的祈安长钟，沿着安静铺开的晨光石阶整装折返。",
             bonusGold = 94L, bonusXp = 124L, bonusMaterial = 3L, investigationGain = 2
         )
-    )
+    ) + SolunaContentExpansion.extraEvents
 
     val companionStories: List<CompanionStoryDef> = listOf(
         CompanionStoryDef(
@@ -2006,6 +2006,9 @@ object ContentCatalog {
             combatRoleSummary = "随行时速度 +3；每第 2 回合触发迅捷箭雨，协助攻击",
             dispatchRoleSummary = "营地协理时每 2 小时沿雾林古道递送余件，带回金币与雾林松木",
             dispatchRegionId = RegionId.MISTWOOD,
+            studyGreeting = "「信件和计划我都替你排好顺序啦，今天打算先专注哪一个小目标？」",
+            studyFocusLine = "艾琳坐在书桌对面迅速分拣完一叠邮件，朝你比了个加油手势。",
+            distractionNudgeLine = "「偶尔离开书桌瞄一眼消息不打紧，收好心绪我们继续往前跑吧！」",
             chapters = listOf(
                 CompanionChapterDef(
                     chapterIndex = 1,
@@ -2054,6 +2057,9 @@ object ContentCatalog {
             combatRoleSummary = "随行时强化护盾并在第 3 回合释放破甲星束，克制高防目标",
             dispatchRoleSummary = "营地协理时每 2 小时校订星表与潮汐手记，带回经验与金币",
             dispatchRegionId = RegionId.STARLIT_RIDGE,
+            studyGreeting = "「就像校准望远镜焦距一样，先把眼前这二十五分钟对准一件事吧。」",
+            studyFocusLine = "诺亚安静擦拭黄铜星镜片，桌角只留下一盏温柔不刺眼的阅读小灯。",
+            distractionNudgeLine = "「视线飘走也没关系，深吸一口气把注意力轻轻拉回星图中心就好。」",
             chapters = listOf(
                 CompanionChapterDef(
                     chapterIndex = 1,
@@ -2102,6 +2108,9 @@ object ContentCatalog {
             combatRoleSummary = "随行时每第 2 回合治疗旅人并补充护盾，提升续航",
             dispatchRoleSummary = "营地协理时每 2 小时照料花圃与干草架，带回对应区域材料与少量金币",
             dispatchRegionId = RegionId.CLOUD_SANCTUARY,
+            studyGreeting = "「慢慢来也没事，专注就像照顾温室嫩芽，保持一点点湿润与耐心就好。」",
+            studyFocusLine = "琳在一旁给玻璃盆栽喷上细雾，书房里飘着安静舒服的草木微香。",
+            distractionNudgeLine = "「如果思绪走神了，不妨站起来活动一下肩膀再回来。」",
             chapters = listOf(
                 CompanionChapterDef(
                     chapterIndex = 1,
@@ -2141,6 +2150,9 @@ object ContentCatalog {
             combatRoleSummary = "随行时开局获得 16 点护盾，攻击伤害提升 10%",
             dispatchRoleSummary = "营地协理时每 2 小时临摹风物画稿，带回金币与沉星梦珠；沉星梦海解锁前带回星辉碎晶",
             dispatchRegionId = RegionId.DREAM_SEA,
+            studyGreeting = "「这一页画稿我陪你一起完成！你专心手头的事，我负责调色。」",
+            studyFocusLine = "汐咬着画笔尾端低头勾勒草图，偶尔只听见纸笔摩挲的沙沙轻响。",
+            distractionNudgeLine = "「别自责呀，画偏一笔也是风景，喝口水继续接上刚才的灵感！」",
             chapters = listOf(
                 CompanionChapterDef(
                     chapterIndex = 1,
@@ -2180,6 +2192,9 @@ object ContentCatalog {
             combatRoleSummary = "随行时开局提供 12 点护盾；每第 3 回合恢复生命、补充护盾并协助攻击",
             dispatchRoleSummary = "营地协理时每 2 小时巡护归梦长廊，带回经验、金币与星拱或沉星材料",
             dispatchRegionId = RegionId.ASTRAL_ARCH,
+            studyGreeting = "「钟摆已经稳定摆动起来了，我会替你守好这段不受打扰的时间。」",
+            studyFocusLine = "岑合上怀表替你添满半杯温热草本饮，静静坐在一旁翻阅旧日志。",
+            distractionNudgeLine = "「被外界打断了一瞬也不用懊恼，把定力稳住，下一段依旧算数。」",
             chapters = listOf(
                 CompanionChapterDef(
                     chapterIndex = 1,
@@ -2210,7 +2225,7 @@ object ContentCatalog {
                 )
             )
         )
-    )
+    ) + SolunaContentExpansion.extraCompanions
 
     val keepsakes: List<KeepsakeDef> = listOf(
         KeepsakeDef(
@@ -2323,7 +2338,7 @@ object ContentCatalog {
             effectSummary = "永久防护 +6，速度 +3；营地协理派遣收获额外 +15%",
             description = "挂在星尘花房檐口的细嘴吹制玻璃风铃，花苗伸芽时会响起几乎听不见的清音。"
         )
-    )
+    ) + SolunaContentExpansion.extraKeepsakes
 
     val milestones: List<MilestoneDef> = listOf(
         MilestoneDef("ms_first_step", "启程守夜人", "完成第 1 次夜间冒险结算", "迈出规律休息与夜间记录的第一步。"),
@@ -2346,7 +2361,7 @@ object ContentCatalog {
         MilestoneDef("ms_masterwork_artisan", "星尘极铸", "将任意一件装备星尘精铸至 Lv.7", "在工坊炉火与星尘淬炼中锻造出伴随终夜的珍品器材。"),
         MilestoneDef("ms_chronicle_archivist", "秘闻归档人", "完成任意 2 卷区域秘闻卷宗的终章", "把旅途中零散的传闻与线索连成完整的长卷故事。"),
         MilestoneDef("ms_bestiary_expert", "百兽博物志", "至少 12 种魔物的讨伐记录达到熟识精通（15 次及以上）", "对梦境生灵习性了如指掌的真正夜行学者。")
-    )
+    ) + SolunaContentExpansion.extraMilestones
 
     val teaBlends: List<TeaBlendDef> = listOf(
         TeaBlendDef(
@@ -2418,7 +2433,12 @@ object ContentCatalog {
             dropRateBonus = 0.14,
             extraFailureTolerance = 1
         )
-    )
+    ) + SolunaContentExpansion.extraFocusDrinks
+
+    val dayPhenomena: List<DayPhenomenon> get() = SolunaContentExpansion.dayPhenomena
+    val focusSpirits: List<FocusSpiritDef> get() = SolunaContentExpansion.focusSpirits
+    val defaultFocusTags: List<FocusTagDef> get() = SolunaContentExpansion.defaultFocusTags
+    val teaEchoes: List<TeaEchoDef> get() = SolunaContentExpansion.teaEchoes
 
     val nightPhenomena: List<NightPhenomenon> = listOf(
         NightPhenomenon(
@@ -2512,7 +2532,7 @@ object ContentCatalog {
         SouvenirDef("souv_aa_hourglass_shard", RegionId.ASTRAL_ARCH, "逆时砂漏碎片", "砂粒会随睡前呼吸缓缓上浮的细小琥珀砂漏。", Stats(maxHp = 22, speed = 2), xpBonusPercent = 4),
         SouvenirDef("souv_aa_chime_key", RegionId.ASTRAL_ARCH, "古钟守望微匙", "岑赠予旅人的小小黄铜调音匙，轻敲会发出安神音律。", Stats(attack = 5, defense = 3), goldBonusPercent = 4),
         SouvenirDef("souv_aa_star_bookmark", RegionId.ASTRAL_ARCH, "晨昏星轨书签", "刻着六境航路坐标的透亮琥珀片，能记下每夜梦途。", Stats(maxHp = 18, attack = 3, defense = 3), materialBonusPercent = 4)
-    )
+    ) + SolunaContentExpansion.extraSouvenirs
 
     val morningEchoes: List<MorningEchoDef> = listOf(
         MorningEchoDef(
@@ -2611,7 +2631,7 @@ object ContentCatalog {
             choiceA = MorningEchoOutcome("将纪念信页寄给营地工坊", "立刻得到一笔丰厚酬金与星拱琥珀。", rewardGold = 260L, rewardXp = 150L, rewardMaterialRegion = RegionId.ASTRAL_ARCH, rewardMaterialAmount = 4L),
             choiceB = MorningEchoOutcome("把回信夹进旅行手账扉页", "下次出征金币 +12%、经验 +10%、攻防 +6。", rewardMaterialRegion = RegionId.ASTRAL_ARCH, rewardMaterialAmount = 3L, nextNightBuff = MorningEchoBuff("echo_aa_amber_letter", "晨昏祝愿", goldBonusPercent = 12, xpBonusPercent = 10, combatAtkBonus = 6, combatDefBonus = 6))
         )
-    )
+    ) + SolunaContentExpansion.extraMorningEchoes
 
     val chronicles: List<ChronicleQuestDef> = listOf(
         ChronicleQuestDef(
@@ -2700,7 +2720,7 @@ object ContentCatalog {
             rewardMaterialBonusPercent = 5,
             completionTitle = "千夜守时总录圆满：永久生命 +40，攻击 +8，防护 +6，速度 +4，全产出提升"
         )
-    )
+    ) + SolunaContentExpansion.extraChronicles
 
     val astralNodes: List<AstralNodeDef> = listOf(
         // Bastion branch
@@ -2719,7 +2739,7 @@ object ContentCatalog {
         AstralNodeDef("astral_scholar_1", BuildArchetype.SCHOLAR, 1, "夜烛手记", "永久攻击 +3，经验产出 +4%。", Stats(attack = 3), xpBonusPercent = 4),
         AstralNodeDef("astral_scholar_2", BuildArchetype.SCHOLAR, 2, "星盘校准", "永久防护 +5，经验 +6%，材料 +5%。", Stats(defense = 5), xpBonusPercent = 6, materialBonusPercent = 5),
         AstralNodeDef("astral_scholar_3", BuildArchetype.SCHOLAR, 3, "博物星冠", "永久攻击 +7，防护 +6，经验 +8%，战斗伤害 +6%。", Stats(attack = 7, defense = 6), xpBonusPercent = 8, combatDamagePercent = 6)
-    )
+    ) + SolunaContentExpansion.extraAstralNodes
 
     val transmuteRecipes: List<TransmuteRecipeDef> = listOf(
         TransmuteRecipeDef(
@@ -2787,7 +2807,7 @@ object ContentCatalog {
             inputMaterialAmount = 20L,
             outputBossMarks = 1L
         )
-    )
+    ) + SolunaContentExpansion.extraTransmuteRecipes
 
     val commissions: List<CommissionDef> = listOf(
         CommissionDef(
@@ -2865,7 +2885,7 @@ object ContentCatalog {
             rewardBossMarks = 1L,
             rewardAffinity = 3
         )
-    )
+    ) + SolunaContentExpansion.extraCommissions
 
     private val routesById: Map<String, RouteDef> = routes.associateBy { it.id }
     private val enemiesById: Map<String, EnemyDef> = enemies.associateBy { it.id }
@@ -2880,6 +2900,9 @@ object ContentCatalog {
     private val astralNodesById: Map<String, AstralNodeDef> = astralNodes.associateBy { it.id }
     private val transmuteRecipesById: Map<String, TransmuteRecipeDef> = transmuteRecipes.associateBy { it.id }
     private val commissionsById: Map<String, CommissionDef> = commissions.associateBy { it.id }
+    private val spiritsById: Map<String, FocusSpiritDef> = focusSpirits.associateBy { it.id }
+    private val teaEchoesById: Map<String, TeaEchoDef> = teaEchoes.associateBy { it.id }
+    private val focusTagsById: Map<String, FocusTagDef> = defaultFocusTags.associateBy { it.id }
 
     fun routeById(id: String): RouteDef? = routesById[id]
     fun enemyById(id: String): EnemyDef? = enemiesById[id]
@@ -2895,10 +2918,18 @@ object ContentCatalog {
     fun astralNodeById(id: String): AstralNodeDef? = astralNodesById[id]
     fun transmuteRecipeById(id: String): TransmuteRecipeDef? = transmuteRecipesById[id]
     fun commissionById(id: String): CommissionDef? = commissionsById[id]
+    fun spiritById(id: String): FocusSpiritDef? = spiritsById[id]
+    fun teaEchoById(id: String): TeaEchoDef? = teaEchoesById[id]
+    fun defaultFocusTagById(id: String): FocusTagDef? = focusTagsById[id]
 
     fun nightPhenomenonForUtcMs(utcMs: Long): NightPhenomenon {
         val dayIndex = utcMs.coerceAtLeast(0L) / 86_400_000L
         return nightPhenomena[(dayIndex % nightPhenomena.size).toInt()]
+    }
+
+    fun dayPhenomenonForUtcMs(utcMs: Long): DayPhenomenon {
+        val dayIndex = utcMs.coerceAtLeast(0L) / 86_400_000L
+        return dayPhenomena[(dayIndex % dayPhenomena.size).toInt()]
     }
 
     fun equipmentPoolForRegion(regionId: RegionId): List<EquipmentDef> =
@@ -2913,14 +2944,28 @@ object ContentCatalog {
     fun morningEchoesForRegion(regionId: RegionId): List<MorningEchoDef> =
         morningEchoes.filter { it.regionId == regionId }
 
+    fun teaEchoesForRegion(regionId: RegionId): List<TeaEchoDef> =
+        teaEchoes.filter { it.regionId == regionId }
+
+    fun spiritsForRegion(regionId: RegionId): List<FocusSpiritDef> =
+        focusSpirits.filter { it.regionId == regionId }
+
     fun facilityRequiredExploreHours(targetLevel: Int): Int = listOf(0, 24, 64, 112, 168)[targetLevel - 1]
 
     fun facilityRequiredExploreHours(type: FacilityType, targetLevel: Int): Int =
         when (type) {
             FacilityType.TEA_HEARTH -> listOf(32, 80, 136, 192, 248)[targetLevel - 1]
             FacilityType.CONSERVATORY -> listOf(40, 128, 176, 248, 312)[targetLevel - 1]
+            FacilityType.SCRIPTORIUM -> listOf(48, 108, 176, 256, 340)[targetLevel - 1]
             else -> facilityRequiredExploreHours(targetLevel)
         }
+
+    fun facilityScriptoriumCost(targetLevel: Int): Pair<Long, Long> {
+        require(targetLevel in 1..5) { "Scriptorium targetLevel must be 1..5" }
+        val goldCosts = listOf(150L, 520L, 1200L, 2400L, 4500L)
+        val inkCosts = listOf(10L, 28L, 60L, 110L, 180L)
+        return goldCosts[targetLevel - 1] to inkCosts[targetLevel - 1]
+    }
 
     fun facilityUpgradeCost(type: FacilityType, targetLevel: Int): Pair<Long, Pair<String, Long>> {
         require(targetLevel in 1..5) { "Facility targetLevel must be 1..5" }

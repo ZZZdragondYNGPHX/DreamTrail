@@ -93,6 +93,29 @@ fun ResourceSummaryRow(resources: ResourceBag, modifier: Modifier = Modifier) {
                 kind = ResourceVisualKind.MATERIAL
             )
         }
+        val vellum = resources.materialCount(RegionId.SUNLIT_ATHENAEUM.materialId)
+        if (vellum > 0L) {
+            ResourceChip(
+                text = "羊皮卷 $vellum",
+                accent = materialAccentColor(RegionId.SUNLIT_ATHENAEUM.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
+        val prism = resources.materialCount(RegionId.DAWNLIGHT_SPIRE.materialId)
+        if (prism > 0L) {
+            ResourceChip(
+                text = "棱晶 $prism",
+                accent = materialAccentColor(RegionId.DAWNLIGHT_SPIRE.materialId),
+                kind = ResourceVisualKind.MATERIAL
+            )
+        }
+        if (resources.inspirationInk > 0L) {
+            ResourceChip(
+                text = "墨晶 ${resources.inspirationInk}",
+                accent = Color(0xFF7FD1BE),
+                kind = ResourceVisualKind.INK
+            )
+        }
         if (resources.bossMarks > 0L) {
             ResourceChip(
                 text = "印记 ${resources.bossMarks}",

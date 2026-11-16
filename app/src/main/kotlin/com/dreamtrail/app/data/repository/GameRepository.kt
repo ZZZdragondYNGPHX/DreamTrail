@@ -101,12 +101,20 @@ class GameRepository(
                 if (savedDiscovery != bundle.discoveryState) {
                     dao.upsertDiscoveryState(DiscoveryStateEntity(1, encodeDiscovery(bundle.discoveryState)))
                 }
+
             }
             recoverPendingSettlementLocked()
         }
     }
 
-    suspend fun startExpedition(routeId: String, strategy: ExpeditionStrategy): ActionOutcome<ExpeditionSession> =
+    suspend fun startExpedition(
+        routeId: String,
+        strategy: ExpeditionStrategy,
+        sessionMode: SessionMode = SessionMode.SLEEP,
+        targetDurationSeconds: Long? = null,
+        focusTagId: String? = null,
+        linkedTaskId: String? = null
+    ): ActionOutcome<ExpeditionSession> =
         withContext(Dispatchers.IO) {
             actionMutex.withLock {
                 // First recover any half-settled session that already fixed endAtUtcMs
@@ -122,13 +130,36 @@ class GameRepository(
                             // Idempotent double-tap handling: return active session
                             return@withTransaction existing.toModel()
                         }
+                        if (targetDurationSeconds != null && targetDurationSeconds !in 300L..sessionMode.maxSingleWindowSeconds) {
+                            throw IllegalArgumentException("目标时长超出当前模式范围")
+                        }
+                        if (sessionMode == SessionMode.FOCUS_POMODORO || sessionMode == SessionMode.POWER_NAP) {
+                            requireNotNull(targetDurationSeconds) { "请选择目标时长" }
+                        }
 
                         var bundle = loadBundleInTx()
+                        val selectedTag = focusTagId ?: bundle.playerState.selectedFocusTagId
+                        val selectedTask = linkedTaskId ?: bundle.playerState.activeFocusTaskId
+                        if (sessionMode.isFocus) {
+                            require(ContentCatalog.defaultFocusTagById(selectedTag) != null ||
+                                bundle.playerState.customFocusTags.any { it.id == selectedTag }) { "专注标签不存在" }
+                            require(selectedTask == null || bundle.playerState.focusTasks.any { it.id == selectedTask && !it.completed }) {
+                                "待办事项不存在或已完成"
+                            }
+                        }
                         if (bundle.playerState.pendingMorningEcho != null) {
                             when (val resolved = ProgressionEngine.resolveMorningEcho(bundle, chooseOptionA = true)) {
                                 is ActionOutcome.Success -> bundle = resolved.value.updatedBundle
                                 is ActionOutcome.Failure -> bundle = bundle.copy(
                                     playerState = bundle.playerState.copy(pendingMorningEcho = null)
+                                )
+                            }
+                        }
+                        if (bundle.playerState.pendingTeaEcho != null) {
+                            when (val resolved = ProgressionEngine.resolveTeaEcho(bundle, chooseOptionA = true)) {
+                                is ActionOutcome.Success -> bundle = resolved.value.updatedBundle
+                                is ActionOutcome.Failure -> bundle = bundle.copy(
+                                    playerState = bundle.playerState.copy(pendingTeaEcho = null)
                                 )
                             }
                         }
@@ -164,7 +195,15 @@ class GameRepository(
                             rulesVersion = ContentCatalog.RULES_VERSION,
                             snapshot = snapshot,
                             isOnboarding = !bundle.discoveryState.onboardingCompleted,
-                            nightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(nowUtcMs)
+                            nightPhenomenon = if (!sessionMode.isFocus) ContentCatalog.nightPhenomenonForUtcMs(nowUtcMs) else null,
+                            sessionMode = sessionMode,
+                            targetDurationSeconds = targetDurationSeconds,
+                            focusTagId = if (sessionMode.isFocus) selectedTag else null,
+                            linkedTaskId = if (sessionMode.isFocus) selectedTask else null,
+                            dayPhenomenon = if (sessionMode.isFocus) ContentCatalog.dayPhenomenonForUtcMs(nowUtcMs) else null,
+                            distractionCount = 0,
+                            flipFocusSeconds = 0L,
+                            zoneId = java.time.ZoneId.systemDefault().id
                         )
 
                         val nextPlayer = bundle.playerState.copy(
@@ -598,6 +637,101 @@ class GameRepository(
         }
     }
 
+    suspend fun resolveTeaEcho(chooseOptionA: Boolean): ActionOutcome<MorningEchoResolution> = withContext(Dispatchers.IO) {
+        actionMutex.withLock {
+            try {
+                db.withTransaction {
+                    val current = loadBundleInTx()
+                    when (val res = ProgressionEngine.resolveTeaEcho(current, chooseOptionA)) {
+                        is ActionOutcome.Failure -> res
+                        is ActionOutcome.Success -> {
+                            val next = res.value.updatedBundle
+                            dao.upsertPlayerState(PlayerStateEntity(1, next.playerState.version, encodePlayer(next.playerState)))
+                            dao.upsertRewardBudget(RewardBudgetEntity(1, encodeBudget(next.budgetState)))
+                            dao.upsertDiscoveryState(DiscoveryStateEntity(1, encodeDiscovery(next.discoveryState)))
+                            ActionOutcome.Success(res.value)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                ActionOutcome.Failure(e.message ?: "处理茶歇奇遇失败")
+            }
+        }
+    }
+
+    suspend fun selectFocusSpirit(spiritId: String?): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.selectFocusSpirit(bundle, spiritId)
+    }
+
+    suspend fun selectFocusTag(tagId: String): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.selectFocusTag(bundle, tagId)
+    }
+
+    suspend fun addCustomFocusTag(name: String, archetype: BuildArchetype): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.addCustomFocusTag(
+            bundle = bundle,
+            name = name,
+            archetype = archetype,
+            tagId = "tag_custom_${UUID.randomUUID().toString().take(8)}"
+        )
+    }
+
+    suspend fun addFocusTask(title: String, tagId: String, targetPomodoros: Int): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.addFocusTask(
+            bundle = bundle,
+            title = title,
+            tagId = tagId,
+            targetPomodoros = targetPomodoros,
+            nowUtcMs = clock.currentWallTimeUtcMs(),
+            taskId = "task_${UUID.randomUUID().toString().take(8)}"
+        )
+    }
+
+    suspend fun completeFocusTask(taskId: String): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.toggleOrCompleteFocusTask(bundle, taskId, clock.currentWallTimeUtcMs())
+    }
+
+    suspend fun deleteFocusTask(taskId: String): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.deleteFocusTask(bundle, taskId)
+    }
+
+    suspend fun clearCompletedFocusTasks(): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.clearCompletedFocusTasks(bundle)
+    }
+
+    suspend fun selectActiveFocusTask(taskId: String?): ActionOutcome<Unit> = mutateBundle { bundle ->
+        ProgressionEngine.selectActiveFocusTask(bundle, taskId)
+    }
+
+    suspend fun recordRunningSessionFocusStats(sessionId: String, distractionCount: Int, flipFocusSeconds: Long) {
+        withContext(Dispatchers.IO) {
+            actionMutex.withLock {
+                db.withTransaction {
+                    val running = dao.getSessionById(sessionId)?.takeIf { it.status == SessionStatus.RUNNING.name }
+                        ?: return@withTransaction
+                    dao.updateRunningSessionFocusStats(
+                        sessionId = running.sessionId,
+                        distractionCount = distractionCount.coerceAtLeast(running.distractionCount),
+                        flipFocusSec = flipFocusSeconds.coerceAtLeast(running.flipFocusSec)
+                    )
+                }
+            }
+        }
+    }
+
+    suspend fun saveReflectionMood(sessionId: String, mood: String) {
+        withContext(Dispatchers.IO) {
+            actionMutex.withLock {
+                db.withTransaction {
+                    val row = dao.getSettlementById(sessionId) ?: return@withTransaction
+                    val decoded = decodeSettlement(row.payloadJson) ?: return@withTransaction
+                    val updated = decoded.copy(reflectionMood = mood)
+                    dao.upsertSettlement(row.copy(payloadJson = encodeSettlement(updated)))
+                }
+            }
+        }
+    }
+
     suspend fun updateSettings(transform: (AppSettingsEntity) -> AppSettingsEntity) =
         withContext(Dispatchers.IO) {
             db.withTransaction {
@@ -614,7 +748,7 @@ class GameRepository(
                     val running = dao.getRunningSession()?.toModel()?.copy(startBootId = null, startElapsedRealtimeMs = null)
                     val settlements = dao.getBackupSettlements(clock.currentWallTimeUtcMs() - SleepBuffPolicy.SEVEN_DAYS_MS).mapNotNull { decodeSettlement(it.payloadJson) }
                     val settlementIds = settlements.map { it.sessionId }.toSet()
-        val ledger = dao.getAllLedgerEntries().filter { it.sessionId in settlementIds }.map { it.toModel(json).copy(sourceRecordIds = emptyList()) }
+                    val ledger = dao.getAllLedgerEntries().filter { it.sessionId in settlementIds }.map { it.toModel(json).copy(sourceRecordIds = emptyList()) }
                     SaveBackupPayload(
                         exportedAtUtcMs = clock.currentWallTimeUtcMs(),
                         contentVersion = ContentCatalog.CONTENT_VERSION,
@@ -796,7 +930,15 @@ class GameRepository(
         rulesVersion = rulesVersion,
         snapshotJson = json.encodeToString(ExpeditionPlayerSnapshot.serializer(), snapshot),
         isOnboarding = isOnboarding,
-        nightPhenomenonJson = nightPhenomenon?.let { json.encodeToString(NightPhenomenon.serializer(), it) }
+        nightPhenomenonJson = nightPhenomenon?.let { json.encodeToString(NightPhenomenon.serializer(), it) },
+        sessionMode = sessionMode.name,
+        targetDurationSec = targetDurationSeconds,
+        focusTagId = focusTagId,
+        linkedTaskId = linkedTaskId,
+        dayPhenomenonJson = dayPhenomenon?.let { json.encodeToString(DayPhenomenon.serializer(), it) },
+        distractionCount = distractionCount,
+        flipFocusSec = flipFocusSeconds,
+        zoneId = zoneId
     )
 
     private fun ExpeditionSessionEntity.toModel(): ExpeditionSession = ExpeditionSession(
@@ -813,7 +955,15 @@ class GameRepository(
         rulesVersion = rulesVersion,
         snapshot = json.decodeFromString(ExpeditionPlayerSnapshot.serializer(), snapshotJson),
         isOnboarding = isOnboarding,
-        nightPhenomenon = nightPhenomenonJson?.let { json.decodeFromString(NightPhenomenon.serializer(), it) }
+        nightPhenomenon = nightPhenomenonJson?.let { json.decodeFromString(NightPhenomenon.serializer(), it) },
+        sessionMode = SessionMode.valueOf(sessionMode),
+        targetDurationSeconds = targetDurationSec,
+        focusTagId = focusTagId,
+        linkedTaskId = linkedTaskId,
+        dayPhenomenon = dayPhenomenonJson?.let { json.decodeFromString(DayPhenomenon.serializer(), it) },
+        distractionCount = distractionCount,
+        flipFocusSeconds = flipFocusSec,
+        zoneId = zoneId
     )
 
     private fun EquipmentInstance.toEntity(): InventoryItemEntity = InventoryItemEntity(

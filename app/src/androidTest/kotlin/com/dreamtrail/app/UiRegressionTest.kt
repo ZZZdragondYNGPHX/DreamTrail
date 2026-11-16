@@ -117,7 +117,7 @@ class UiRegressionTest {
         scrollDialogToText(tea.name)
         compose.onNode(hasText(tea.name) and hasAnyAncestor(isDialog()), useUnmergedTree = true).performClick()
         compose.waitUntil(10_000) { state.playerState.activeTeaBlendId == tea.id }
-        val notice = "已备好睡前热茶「${tea.name}」"
+        val notice = "已备好「${tea.name}」"
         compose.waitUntil(10_000) { compose.onAllNodesWithText(notice).fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText(notice).assertIsDisplayed()
         scrollJourneyTo("热茶")
@@ -140,5 +140,35 @@ class UiRegressionTest {
         scrollJourneyTo("继续准备旅程")
         compose.onNodeWithText("继续准备旅程").performScrollTo().performClick()
         assertTrue(state.recentSettlements.size == 1)
+    }
+
+    @Test fun focusPomodoroTaskSoundscapeAndSettlementFlowWorks() {
+        seed()
+        scrollJourneyTo("白昼专注")
+        compose.onNodeWithText("白昼专注").performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithText("番茄定心").fetchSemanticsNodes().isNotEmpty()
+        }
+        scrollJourneyTo("专注方向与今日行囊待办")
+
+        scrollJourneyTo("白噪音")
+        compose.onNodeWithText("白噪音").performScrollTo().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodes(hasText("自然声景与白噪音台") and hasAnyAncestor(isDialog())).fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNode(hasText("雾林细雨") and hasAnyAncestor(isDialog()), useUnmergedTree = true).performScrollTo().performClick()
+        compose.onNode(hasText("关闭") and hasAnyAncestor(isDialog())).performClick()
+
+        scrollJourneyTo("开始专注 · 踏勘出发")
+        compose.onNodeWithText("开始专注 · 踏勘出发").performScrollTo().performClick()
+        compose.waitUntil(10_000) { state.runningSession?.sessionMode == SessionMode.FOCUS_POMODORO }
+
+        compose.onNodeWithText("完成本轮专注 · 结算收获").performScrollTo().performClick()
+        compose.onNode(hasText("确认结算专注战报") and hasAnyAncestor(isDialog())).performClick()
+        compose.waitUntil(10_000) { state.runningSession == null }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("已入账").fetchSemanticsNodes().isNotEmpty() }
+        scrollJourneyTo("继续准备旅程")
+        compose.onNodeWithText("继续准备旅程").performScrollTo().performClick()
+        assertTrue(state.recentSettlements.firstOrNull()?.sessionMode == SessionMode.FOCUS_POMODORO)
     }
 }

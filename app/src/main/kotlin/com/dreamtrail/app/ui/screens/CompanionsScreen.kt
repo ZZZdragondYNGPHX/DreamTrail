@@ -394,6 +394,10 @@ fun CompanionsScreen(
                         Text(
                             text = if (chapterUnlocked) {
                                 currentChapter.summary
+                            } else if (currentChapter.chapterIndex == 1 && story.id == "comp_wen") {
+                                "解锁条件：累计完成 3 轮白昼专注，或晴岚书院调查度达 2"
+                            } else if (currentChapter.chapterIndex == 1 && story.id == "comp_zhaolu") {
+                                "解锁条件：累计白昼专注满 8 小时，或累计探索达 416 小时"
                             } else {
                                 "解锁条件：旅舍 Lv.${currentChapter.requiredInnLevel} 且 ${currentChapter.regionId.displayName}调查度达 ${currentChapter.requiredInvestigation}，累计有效探索 ${currentChapter.requiredExploreHours} 小时"
                             },
@@ -508,14 +512,27 @@ private fun CompanionDetailStageCard(
                 } else {
                     val ch1 = story.chapters.firstOrNull()
                     if (ch1 != null) {
+                        val condText = when (story.id) {
+                            "comp_wen" -> "结识条件：累计完成 3 轮白昼专注，或晴岚书院调查度达 2"
+                            "comp_zhaolu" -> "结识条件：累计专注满 8 小时，或累计探索达 416 小时"
+                            else -> "结识条件：旅舍 Lv.${ch1.requiredInnLevel} · ${ch1.regionId.displayName}调查 ${ch1.requiredInvestigation} · 探索 ${ch1.requiredExploreHours}h"
+                        }
                         Text(
-                            text = "结识条件：旅舍 Lv.${ch1.requiredInnLevel} · ${ch1.regionId.displayName}调查 ${ch1.requiredInvestigation} · 探索 ${ch1.requiredExploreHours}h",
+                            text = condText,
                             style = MaterialTheme.typography.bodySmall,
                             color = DreamTrailColors.MutedInk
                         )
                     }
                 }
             }
+        }
+
+        if (unlockedChapters >= 1 && story.studyGreeting.isNotBlank()) {
+            Text(
+                text = story.studyGreeting,
+                style = MaterialTheme.typography.bodySmall,
+                color = DreamTrailColors.SageMist
+            )
         }
 
         // Affinity perk pills

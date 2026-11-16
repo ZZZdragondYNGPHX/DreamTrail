@@ -57,7 +57,9 @@ fun tierAccentColor(tier: Int): Color = when (tier) {
     3 -> Color(0xFFC29AE8)
     4 -> Color(0xFF7AD6D2)
     5 -> Color(0xFF72A4FF)
-    else -> Color(0xFFF3C365)
+    6 -> Color(0xFFF3C365)
+    7 -> Color(0xFFE6B455)
+    else -> Color(0xFFF0985A)
 }
 
 fun archetypeColor(archetype: BuildArchetype): Color = when (archetype) {
@@ -74,6 +76,8 @@ fun regionAccentColor(region: RegionId): Color = when (region) {
     RegionId.CLOUD_SANCTUARY -> Color(0xFF83D7CE)
     RegionId.DREAM_SEA -> Color(0xFF7EA9FF)
     RegionId.ASTRAL_ARCH -> Color(0xFFF3C365)
+    RegionId.SUNLIT_ATHENAEUM -> Color(0xFFE6B455)
+    RegionId.DAWNLIGHT_SPIRE -> Color(0xFFF0985A)
 }
 
 fun materialAccentColor(materialId: String): Color = when (materialId) {
@@ -83,6 +87,8 @@ fun materialAccentColor(materialId: String): Color = when (materialId) {
     RegionId.CLOUD_SANCTUARY.materialId -> Color(0xFF9AD4DC)
     RegionId.DREAM_SEA.materialId -> Color(0xFF8AB8FF)
     RegionId.ASTRAL_ARCH.materialId -> Color(0xFFFFD089)
+    RegionId.SUNLIT_ATHENAEUM.materialId -> Color(0xFFE8C478)
+    RegionId.DAWNLIGHT_SPIRE.materialId -> Color(0xFFF3A775)
     else -> DreamTrailColors.LanternAmber
 }
 
@@ -102,6 +108,8 @@ fun companionAccentColor(companionId: String?): Color = when (companionId) {
     "comp_lin" -> Color(0xFF84D8C7)
     "comp_xiu" -> Color(0xFFC99BEB)
     "comp_cen" -> DreamTrailColors.LanternAmber
+    "comp_wen" -> Color(0xFFE6B455)
+    "comp_zhaolu" -> Color(0xFFF0985A)
     else -> DreamTrailColors.LanternAmber
 }
 
@@ -1055,6 +1063,12 @@ fun TeaCupIconBox(
         "tea_pine_needle" -> DreamTrailColors.SageMist
         "tea_silver_moon_oolong" -> Color(0xFFC8B4EB)
         "tea_astral_amber_brew" -> DreamTrailColors.LanternAmber
+        "tea_rosemary_lemon" -> Color(0xFFCEE376)
+        "tea_acorn_cocoa" -> Color(0xFFC68B59)
+        "tea_sea_breeze_cold_brew" -> Color(0xFF6BB2DF)
+        "tea_cloud_matcha" -> Color(0xFF7FD89B)
+        "tea_sunlit_pour_over" -> Color(0xFFE6A24C)
+        "tea_soluna_nectar" -> Color(0xFFF3BA78)
         else -> DreamTrailColors.MutedInk
     }
 
@@ -1108,7 +1122,8 @@ enum class ResourceVisualKind {
     GOLD,
     XP,
     MATERIAL,
-    BOSS_MARK
+    BOSS_MARK,
+    INK
 }
 
 @Composable
@@ -1159,6 +1174,72 @@ fun ResourceBadgeIcon(
                 drawCircle(accent, radius = w * 0.34f, center = Offset(cx, cy), style = Stroke(2f))
                 drawCircle(DreamTrailColors.LanternAmber, radius = w * 0.14f, center = Offset(cx, cy))
             }
+            ResourceVisualKind.INK -> {
+                val drop = Path().apply {
+                    moveTo(cx, h * 0.12f)
+                    lineTo(w * 0.76f, h * 0.56f)
+                    lineTo(cx, h * 0.88f)
+                    lineTo(w * 0.24f, h * 0.56f)
+                    close()
+                }
+                drawPath(drop, color = accent.copy(alpha = 0.9f))
+                drawCircle(DreamTrailColors.LanternAmber, radius = w * 0.12f, center = Offset(cx, cy + h * 0.04f))
+            }
+        }
+    }
+}
+
+@Composable
+fun FocusSpiritAvatar(
+    spirit: FocusSpiritDef,
+    size: Dp = 44.dp,
+    unlocked: Boolean = true,
+    active: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val accent = regionAccentColor(spirit.regionId)
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (active) accent.copy(alpha = 0.22f) else DreamTrailColors.NightBackground)
+            .border(
+                width = if (active) 1.5.dp else 1.dp,
+                color = if (active) DreamTrailColors.LanternAmber else DreamTrailColors.CardOutline,
+                shape = RoundedCornerShape(10.dp)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(6.dp)
+                .alpha(if (unlocked) 1f else 0.35f)
+        ) {
+            val w = this.size.width
+            val h = this.size.height
+            drawCircle(accent.copy(alpha = 0.20f), radius = w * 0.44f, center = Offset(w * 0.5f, h * 0.52f))
+            drawCircle(accent, radius = w * 0.28f, center = Offset(w * 0.5f, h * 0.56f))
+            // Cute ears
+            val ears = Path().apply {
+                moveTo(w * 0.28f, h * 0.42f)
+                lineTo(w * 0.32f, h * 0.18f)
+                lineTo(w * 0.44f, h * 0.34f)
+                moveTo(w * 0.56f, h * 0.34f)
+                lineTo(w * 0.68f, h * 0.18f)
+                lineTo(w * 0.72f, h * 0.42f)
+            }
+            drawPath(ears, color = accent)
+            drawCircle(DreamTrailColors.ParchmentText, radius = w * 0.06f, center = Offset(w * 0.42f, h * 0.54f))
+            drawCircle(DreamTrailColors.ParchmentText, radius = w * 0.06f, center = Offset(w * 0.58f, h * 0.54f))
+        }
+        if (!unlocked) {
+            Icon(
+                imageVector = Icons.Rounded.Lock,
+                contentDescription = null,
+                tint = DreamTrailColors.MutedInk,
+                modifier = Modifier.size(14.dp)
+            )
         }
     }
 }

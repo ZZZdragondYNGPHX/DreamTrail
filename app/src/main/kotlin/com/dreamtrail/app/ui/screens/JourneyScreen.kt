@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,29 +27,41 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.DeleteOutline
+import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.NightsStay
+import androidx.compose.material.icons.rounded.Pets
+import androidx.compose.material.icons.rounded.TaskAlt
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -66,6 +79,8 @@ import com.dreamtrail.app.ui.JourneyUiState
 import com.dreamtrail.app.ui.components.CampfireTravelerScene
 import com.dreamtrail.app.ui.components.CharacterPortraitBox
 import com.dreamtrail.app.ui.components.EventBadgeIcon
+import com.dreamtrail.app.ui.components.FocusDeskScene
+import com.dreamtrail.app.ui.components.FocusSpiritAvatar
 import com.dreamtrail.app.ui.components.JournalCard
 import com.dreamtrail.app.ui.components.ResourceBadgeIcon
 import com.dreamtrail.app.ui.components.ResourceSummaryRow
@@ -75,6 +90,7 @@ import com.dreamtrail.app.ui.components.StrategyEmblem
 import com.dreamtrail.app.ui.components.TagBadge
 import com.dreamtrail.app.ui.components.TeaCupIconBox
 import com.dreamtrail.app.ui.components.WorldMapCanvas
+import com.dreamtrail.app.ui.components.archetypeColor
 import com.dreamtrail.app.ui.components.companionAccentColor
 import com.dreamtrail.app.ui.components.formatDurationZh
 import com.dreamtrail.app.ui.components.materialAccentColor
@@ -82,11 +98,13 @@ import com.dreamtrail.app.ui.components.regionAccentColor
 import com.dreamtrail.app.ui.theme.DreamTrailColors
 import com.dreamtrail.core.content.ContentCatalog
 import com.dreamtrail.core.engine.RewardBudgetCalculator
+import com.dreamtrail.core.model.BuildArchetype
 import com.dreamtrail.core.model.ExpeditionStrategy
 import com.dreamtrail.core.model.FacilityType
 import com.dreamtrail.core.model.PlayerState
 import com.dreamtrail.core.model.RegionId
 import com.dreamtrail.core.model.RouteDef
+import com.dreamtrail.core.model.SessionMode
 import com.dreamtrail.core.model.SettlementResult
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -96,7 +114,8 @@ private enum class PrepDockKind {
     COMPANION,
     TEA,
     STRATEGY,
-    BEACON
+    BEACON,
+    SPIRIT
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -117,6 +136,23 @@ fun JourneyScreen(
     onSelectDreamBeaconTier: (Int) -> Unit = {},
     onResolveMorningEcho: (Boolean) -> Unit = {},
     onApplyLoadout: (Int) -> Unit = {},
+    onSelectMode: (SessionMode) -> Unit = {},
+    onSelectPomodoroMinutes: (Int) -> Unit = {},
+    onSelectNapMinutes: (Int) -> Unit = {},
+    onResolveTeaEcho: (Boolean) -> Unit = {},
+    onSelectSpirit: (String?) -> Unit = {},
+    onSelectFocusTag: (String) -> Unit = {},
+    onAddCustomFocusTag: (String, BuildArchetype) -> Unit = { _, _ -> },
+    onAddFocusTask: (String, String, Int) -> Unit = { _, _, _ -> },
+    onCompleteFocusTask: (String) -> Unit = {},
+    onDeleteFocusTask: (String) -> Unit = {},
+    onClearCompletedFocusTasks: () -> Unit = {},
+    onSelectActiveFocusTask: (String?) -> Unit = {},
+    onOpenSoundscape: () -> Unit = {},
+    onOpenBreathing: () -> Unit = {},
+    onSkipBreak: () -> Unit = {},
+    onSelectMood: (String, String) -> Unit = { _, _ -> },
+    onStartBreak: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val running = dataState.runningSession
@@ -130,7 +166,10 @@ fun JourneyScreen(
 
     val listState = rememberLazyListState()
     LaunchedEffect(uiState.latestReport?.sessionId) {
-        if (uiState.latestReport != null) listState.scrollToItem(0)
+        if (uiState.latestReport != null) {
+            withFrameNanos { }
+            listState.scrollToItem(0)
+        }
     }
     LazyColumn(
         state = listState,
@@ -140,6 +179,39 @@ fun JourneyScreen(
     ) {
         item(key = "resources") {
             ResourceSummaryRow(resources = dataState.playerState.resources)
+        }
+
+        if (uiState.breakRemainingSeconds > 0 && running == null) {
+            item(key = "break_timer_banner") {
+                val m = uiState.breakRemainingSeconds / 60
+                val s = uiState.breakRemainingSeconds % 60
+                JournalCard(
+                    containerColor = DreamTrailColors.CardElevated,
+                    borderColor = DreamTrailColors.SageMist.copy(alpha = 0.7f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "茶歇放松倒计时 ${String.format(Locale.US, "%02d:%02d", m, s)}",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = DreamTrailColors.SageMist
+                            )
+                            Text(
+                                text = "远眺窗外或喝口水，等倒计时结束再开始下一轮。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = DreamTrailColors.MutedInk
+                            )
+                        }
+                        TextButton(onClick = onSkipBreak) {
+                            Text("结束休息")
+                        }
+                    }
+                }
+            }
         }
 
         if (uiState.errorMessage != null && uiState.retryKind != null) {
@@ -175,7 +247,9 @@ fun JourneyScreen(
                     report = uiState.latestReport!!,
                     workshopLevel = dataState.playerState.facilityLevel(FacilityType.WORKSHOP),
                     primaryActionLabel = "继续准备旅程",
-                    onPrimaryAction = onDismissReport
+                    onPrimaryAction = onDismissReport,
+                    onSelectMood = { mood -> onSelectMood(uiState.latestReport!!.sessionId, mood) },
+                    onStartBreak = onStartBreak
                 )
             }
         } else if (running != null) {
@@ -298,6 +372,7 @@ fun JourneyScreen(
             )
             val player = dataState.playerState
             val pendingEcho = player.pendingMorningEcho?.let { ContentCatalog.morningEchoById(it.echoId) }
+            val pendingTeaEcho = player.pendingTeaEcho?.let { ContentCatalog.teaEchoById(it.echoId) }
 
             if (pendingEcho != null && uiState.latestReport == null) {
                 item(key = "morning_echo_${pendingEcho.id}") {
@@ -353,61 +428,335 @@ fun JourneyScreen(
                 }
             }
 
-            // Nightly Forecast Strip
-            item(key = "night_forecast") {
-                val phenom = uiState.nightPhenomenon
-                val favoredMatch = phenom.favoredRegionId == selectedRoute.regionId ||
-                    phenom.favoredEnvironment == selectedRoute.environmentTag
-                Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = DreamTrailColors.CardSurface,
-                    border = BorderStroke(
-                        1.dp,
-                        if (favoredMatch) DreamTrailColors.LanternAmber.copy(alpha = 0.7f) else DreamTrailColors.CardOutline
-                    )
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+            if (pendingTeaEcho != null && uiState.latestReport == null) {
+                item(key = "tea_echo_${pendingTeaEcho.id}") {
+                    JournalCard(
+                        containerColor = DreamTrailColors.CardElevated,
+                        borderColor = DreamTrailColors.LanternAmber.copy(alpha = 0.7f)
                     ) {
-                        Icon(
-                            imageVector = Icons.Rounded.NightsStay,
-                            contentDescription = null,
-                            tint = if (favoredMatch) DreamTrailColors.LanternAmber else DreamTrailColors.StarlightBlue,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "今夜星象 · ${phenom.name}",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = DreamTrailColors.LanternAmber
+                            EventBadgeIcon(
+                                isFirstDiscovery = true,
+                                title = pendingTeaEcho.title,
+                                size = 34.dp
                             )
                             Text(
-                                text = phenom.subtitle,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = DreamTrailColors.MutedInk,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
+                                text = "茶歇奇遇 · ${pendingTeaEcho.title}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = DreamTrailColors.ParchmentText,
+                                modifier = Modifier.weight(1f)
                             )
-                            player.activeMorningBuff?.let { buff ->
-                                Text(
-                                    text = "晨光余韵：${buff.name}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = DreamTrailColors.StarlightBlue
-                                )
+                            TagBadge("茶歇礼", DreamTrailColors.LanternAmber)
+                        }
+                        Text(
+                            text = pendingTeaEcho.prompt,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = DreamTrailColors.MutedInk
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { onResolveTeaEcho(true) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Text(pendingTeaEcho.choiceA.label)
+                            }
+                            OutlinedButton(
+                                onClick = { onResolveTeaEcho(false) },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 48.dp)
+                            ) {
+                                Text(pendingTeaEcho.choiceB.label)
                             }
                         }
-                        TagBadge(
-                            text = if (favoredMatch) "契合路线" else phenom.favoredRegionId.displayName,
-                            accent = if (favoredMatch) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
-                        )
                     }
+                }
+            }
+
+            // Dual-Core Mode Switcher + Ambient Quick Tools
+            item(key = "soluna_mode_switcher") {
+                val isFocusSelected = uiState.selectedMode.isFocus
+                JournalCard(
+                    containerColor = DreamTrailColors.CardSurface,
+                    borderColor = if (isFocusSelected) DreamTrailColors.LanternAmber.copy(alpha = 0.65f) else DreamTrailColors.StarlightBlue.copy(alpha = 0.55f)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                if (uiState.selectedMode.isFocus) onSelectMode(SessionMode.SLEEP)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (!isFocusSelected) DreamTrailColors.StarlightBlue.copy(alpha = 0.22f) else DreamTrailColors.CardElevated,
+                                contentColor = if (!isFocusSelected) DreamTrailColors.ParchmentText else DreamTrailColors.MutedInk
+                            ),
+                            border = BorderStroke(1.dp, if (!isFocusSelected) DreamTrailColors.StarlightBlue else DreamTrailColors.CardOutline)
+                        ) {
+                            Text("夜间安眠", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                if (!uiState.selectedMode.isFocus) onSelectMode(SessionMode.FOCUS_POMODORO)
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .heightIn(min = 48.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isFocusSelected) DreamTrailColors.LanternAmber else DreamTrailColors.CardElevated,
+                                contentColor = if (isFocusSelected) DreamTrailColors.LanternInk else DreamTrailColors.ParchmentText
+                            ),
+                            border = BorderStroke(1.dp, if (isFocusSelected) DreamTrailColors.LanternAmber else DreamTrailColors.CardOutline)
+                        ) {
+                            Text("白昼专注", maxLines = 1)
+                        }
+                    }
+
+                    if (!isFocusSelected) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = uiState.selectedMode == SessionMode.SLEEP,
+                                onClick = { onSelectMode(SessionMode.SLEEP) },
+                                label = { Text("整夜安眠") }
+                            )
+                            FilterChip(
+                                selected = uiState.selectedMode == SessionMode.POWER_NAP,
+                                onClick = { onSelectMode(SessionMode.POWER_NAP) },
+                                label = { Text("午后小憩") }
+                            )
+                            if (uiState.selectedMode == SessionMode.POWER_NAP) {
+                                listOf(15, 30, 45).forEach { mins ->
+                                    FilterChip(
+                                        selected = uiState.selectedNapMinutes == mins,
+                                        onClick = { onSelectNapMinutes(mins) },
+                                        label = { Text("${mins}分钟") }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            FilterChip(
+                                selected = uiState.selectedMode == SessionMode.FOCUS_POMODORO,
+                                onClick = { onSelectMode(SessionMode.FOCUS_POMODORO) },
+                                label = { Text("番茄定心") }
+                            )
+                            FilterChip(
+                                selected = uiState.selectedMode == SessionMode.FOCUS_FLOW,
+                                onClick = { onSelectMode(SessionMode.FOCUS_FLOW) },
+                                label = { Text("心流漫步(正计时)") }
+                            )
+                        }
+                        if (uiState.selectedMode == SessionMode.FOCUS_POMODORO) {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(15, 25, 45, 60).forEach { mins ->
+                                    FilterChip(
+                                        selected = uiState.selectedPomodoroMinutes == mins,
+                                        onClick = { onSelectPomodoroMinutes(mins) },
+                                        label = { Text("${mins}分钟") }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (!isFocusSelected && player.nightPrepCharge > 0) {
+                            val tier = when {
+                                player.nightPrepCharge >= 100 -> 3
+                                player.nightPrepCharge >= 50 -> 2
+                                player.nightPrepCharge >= 25 -> 1
+                                else -> 0
+                            }
+                            TagBadge("夜行筹备 ${player.nightPrepCharge}% (阶$tier)", DreamTrailColors.StarlightBlue)
+                        }
+                        if (isFocusSelected) {
+                            player.focusVigourBuff?.let { buff ->
+                                TagBadge("${buff.name} 生效中", DreamTrailColors.SageMist)
+                            }
+                        }
+                        OutlinedButton(
+                            onClick = onOpenSoundscape,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.heightIn(min = 38.dp)
+                        ) {
+                            Icon(Icons.Rounded.GraphicEq, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("白噪音", style = MaterialTheme.typography.labelMedium)
+                        }
+                        OutlinedButton(
+                            onClick = onOpenBreathing,
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier.heightIn(min = 38.dp)
+                        ) {
+                            Icon(Icons.Rounded.Air, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.size(4.dp))
+                            Text("呼吸调息", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+                }
+            }
+
+            // Forecast Strip (Night or Day Phenomenon)
+            item(key = "night_forecast") {
+                if (!uiState.selectedMode.isFocus) {
+                    val phenom = uiState.nightPhenomenon
+                    val favoredMatch = phenom.favoredRegionId == selectedRoute.regionId ||
+                        phenom.favoredEnvironment == selectedRoute.environmentTag
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = DreamTrailColors.CardSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (favoredMatch) DreamTrailColors.LanternAmber.copy(alpha = 0.7f) else DreamTrailColors.CardOutline
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.NightsStay,
+                                contentDescription = null,
+                                tint = if (favoredMatch) DreamTrailColors.LanternAmber else DreamTrailColors.StarlightBlue,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "今夜星象 · ${phenom.name}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = DreamTrailColors.LanternAmber
+                                )
+                                Text(
+                                    text = phenom.subtitle,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = DreamTrailColors.MutedInk,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                player.activeMorningBuff?.let { buff ->
+                                    Text(
+                                        text = "晨光余韵：${buff.name}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = DreamTrailColors.StarlightBlue
+                                    )
+                                }
+                                player.activeTeaEchoBuff?.let { buff ->
+                                    Text(
+                                        text = "茶歇余韵：${buff.name}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = DreamTrailColors.LanternAmber
+                                    )
+                                }
+                            }
+                            TagBadge(
+                                text = if (favoredMatch) "契合路线" else phenom.favoredRegionId.displayName,
+                                accent = if (favoredMatch) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
+                            )
+                        }
+                    }
+                } else {
+                    val dayPhenom = uiState.dayPhenomenon
+                    val favoredMatch = dayPhenom.favoredRegionId == selectedRoute.regionId ||
+                        dayPhenom.favoredEnvironment == selectedRoute.environmentTag
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = DreamTrailColors.CardSurface,
+                        border = BorderStroke(
+                            1.dp,
+                            if (favoredMatch) DreamTrailColors.LanternAmber.copy(alpha = 0.7f) else DreamTrailColors.CardOutline
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.WbSunny,
+                                contentDescription = null,
+                                tint = if (favoredMatch) DreamTrailColors.LanternAmber else DreamTrailColors.SageMist,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    text = "今日晴岚天象 · ${dayPhenom.name}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = DreamTrailColors.LanternAmber
+                                )
+                                Text(
+                                    text = "${dayPhenom.subtitle} · 墨晶 +${dayPhenom.inkBonusPercent}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = DreamTrailColors.MutedInk,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                player.activeTeaEchoBuff?.let { buff ->
+                                    Text(
+                                        text = "茶歇余韵：${buff.name}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = DreamTrailColors.SageMist
+                                    )
+                                }
+                            }
+                            TagBadge(
+                                text = if (favoredMatch) "契合路线" else dayPhenom.favoredRegionId.displayName,
+                                accent = if (favoredMatch) DreamTrailColors.SageMist else DreamTrailColors.MutedInk
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (uiState.selectedMode.isFocus) {
+                item(key = "focus_tags_and_tasks") {
+                    FocusTagAndTaskCard(
+                        player = player,
+                        onSelectTag = onSelectFocusTag,
+                        onAddCustomTag = onAddCustomFocusTag,
+                        onAddTask = onAddFocusTask,
+                        onSelectActiveTask = onSelectActiveFocusTask,
+                        onCompleteTask = onCompleteFocusTask,
+                        onDeleteTask = onDeleteFocusTask,
+                        onClearCompletedTasks = onClearCompletedFocusTasks,
+                        isBusy = uiState.isPerformingAction
+                    )
                 }
             }
 
@@ -530,7 +879,7 @@ fun JourneyScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "今晚去向 · ${selectedRoute.name}",
+                                    text = "${if (uiState.selectedMode.isFocus) "专研去向" else "今晚去向"} · ${selectedRoute.name}",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = DreamTrailColors.ParchmentText
                                 )
@@ -627,7 +976,7 @@ fun JourneyScreen(
 
                         PrepDockSlot(
                             modifier = Modifier.weight(1f),
-                            label = "热茶",
+                            label = if (uiState.selectedMode.isFocus) "特调" else "热茶",
                             value = activeTea?.name ?: if (teaHearthLv > 0) "未选" else "需火塘",
                             accent = if (activeTea != null) DreamTrailColors.LanternAmber else DreamTrailColors.MutedInk,
                             onClick = { activePrepDialog = PrepDockKind.TEA }
@@ -665,14 +1014,69 @@ fun JourneyScreen(
                         }
                     }
 
-                    CampfireTravelerScene(
-                        isTraveling = false,
-                        reduceMotion = reduceMotion,
-                        regionId = selectedRoute.regionId,
-                        companionId = player.activeCompanionId,
-                        nightPhenomenon = uiState.nightPhenomenon,
-                        height = 104.dp
-                    )
+                    val activeSpirit = player.activeSpiritId?.let { ContentCatalog.spiritById(it) }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = DreamTrailColors.CardElevated,
+                        border = BorderStroke(1.dp, if (activeSpirit != null) DreamTrailColors.SageMist.copy(alpha = 0.6f) else DreamTrailColors.CardOutline),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { activePrepDialog = PrepDockKind.SPIRIT }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            if (activeSpirit != null) {
+                                FocusSpiritAvatar(spirit = activeSpirit, size = 34.dp, unlocked = true, active = true)
+                            } else {
+                                Icon(Icons.Rounded.Pets, contentDescription = null, tint = DreamTrailColors.MutedInk, modifier = Modifier.size(22.dp))
+                            }
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = activeSpirit?.let { "伴读灵兽 · ${it.name}" } ?: "伴读灵兽 · 未选",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = DreamTrailColors.ParchmentText
+                                )
+                                Text(
+                                    text = activeSpirit?.description ?: "已结识 ${dataState.discoveryState.unlockedSpiritIds.size}/${ContentCatalog.focusSpirits.size} 只（点击更换）",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = DreamTrailColors.MutedInk,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            TagBadge("选择灵兽", DreamTrailColors.SageMist)
+                        }
+                    }
+
+                    if (uiState.selectedMode.isFocus) {
+                        FocusDeskScene(
+                            isRunning = false,
+                            reduceMotion = reduceMotion,
+                            regionId = selectedRoute.regionId,
+                            companionId = player.activeCompanionId,
+                            spiritId = player.activeSpiritId,
+                            height = 104.dp
+                        )
+                    } else {
+                        CampfireTravelerScene(
+                            isTraveling = false,
+                            reduceMotion = reduceMotion,
+                            regionId = selectedRoute.regionId,
+                            companionId = player.activeCompanionId,
+                            nightPhenomenon = uiState.nightPhenomenon,
+                            height = 104.dp
+                        )
+                    }
+
+                    val ctaLabel = when {
+                        uiState.isSubmittingDeparture -> "正在记录出发…"
+                        uiState.selectedMode == SessionMode.SLEEP -> "出发，去休息"
+                        uiState.selectedMode == SessionMode.POWER_NAP -> "开始小憩 · 安心歇会"
+                        else -> "开始专注 · 踏勘出发"
+                    }
 
                     Button(
                         onClick = onStartExpedition,
@@ -681,10 +1085,10 @@ fun JourneyScreen(
                             .fillMaxWidth()
                             .heightIn(min = 52.dp)
                     ) {
-                        Text(if (uiState.isSubmittingDeparture) "正在记录出发…" else "出发，去休息")
+                        Text(ctaLabel)
                     }
 
-                    if (!dataState.discoveryState.onboardingCompleted) {
+                    if (!dataState.discoveryState.onboardingCompleted && !uiState.selectedMode.isFocus) {
                         Surface(
                             shape = RoundedCornerShape(10.dp),
                             color = DreamTrailColors.CardElevated
@@ -698,7 +1102,13 @@ fun JourneyScreen(
                         }
                     }
 
-                    if (remainingBudgetSec <= 3600L) {
+                    if (uiState.selectedMode.isFocus) {
+                        Text(
+                            text = "今日专注额度还剩 ${formatDurationZh(uiState.remainingFocusBudgetSeconds)}（独立于夜间睡眠额度计算）",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (uiState.remainingFocusBudgetSeconds <= 1800L) DreamTrailColors.LanternAmber else DreamTrailColors.SageMist
+                        )
+                    } else if (remainingBudgetSec <= 3600L) {
                         Text(
                             text = if (remainingBudgetSec == 0L) {
                                 "伙伴今日已完成主要探索，继续出发将在营地附近休整，待额度释放后恢复收益。"
@@ -787,19 +1197,21 @@ fun JourneyScreen(
         }
     }
 
-    // Modal picker dialog for the 4 prep slots
+    // Modal picker dialog for the 4 prep slots + spirit
     activePrepDialog?.let { kind ->
         JourneyPrepModal(
             kind = kind,
             player = dataState.playerState,
             discoveryUnlockedChapters = dataState.discoveryState.companionChapters,
+            unlockedSpiritIds = dataState.discoveryState.unlockedSpiritIds,
             selectedStrategy = uiState.selectedStrategy,
             onDismiss = { activePrepDialog = null },
             onSelectCompanion = onSelectCompanion,
             onSelectTeaBlend = onSelectTeaBlend,
             onSelectStrategy = onSelectStrategy,
             onSelectDreamBeaconTier = onSelectDreamBeaconTier,
-            onApplyLoadout = onApplyLoadout
+            onApplyLoadout = onApplyLoadout,
+            onSelectSpirit = onSelectSpirit
         )
     }
 
@@ -816,7 +1228,8 @@ fun JourneyScreen(
                                 report = detail,
                                 workshopLevel = dataState.playerState.facilityLevel(FacilityType.WORKSHOP),
                                 primaryActionLabel = "关闭战报",
-                                onPrimaryAction = { onOpenHistoryReport(null) }
+                                onPrimaryAction = { onOpenHistoryReport(null) },
+                                onSelectMood = { mood -> onSelectMood(detail.sessionId, mood) }
                             )
                         }
                     }
@@ -922,13 +1335,15 @@ private fun JourneyPrepModal(
     kind: PrepDockKind,
     player: PlayerState,
     discoveryUnlockedChapters: Map<String, Int>,
+    unlockedSpiritIds: Set<String>,
     selectedStrategy: ExpeditionStrategy,
     onDismiss: () -> Unit,
     onSelectCompanion: (String?) -> Unit,
     onSelectTeaBlend: (String?) -> Unit,
     onSelectStrategy: (ExpeditionStrategy) -> Unit,
     onSelectDreamBeaconTier: (Int) -> Unit,
-    onApplyLoadout: (Int) -> Unit
+    onApplyLoadout: (Int) -> Unit,
+    onSelectSpirit: (String?) -> Unit
 ) {
     Dialog(
         onDismissRequest = onDismiss,
@@ -948,10 +1363,11 @@ private fun JourneyPrepModal(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 val modalTitle = when (kind) {
-                    PrepDockKind.COMPANION -> "选择今夜随行伙伴"
-                    PrepDockKind.TEA -> "泡一杯睡前热茶"
+                    PrepDockKind.COMPANION -> "选择随行伙伴"
+                    PrepDockKind.TEA -> "泡一杯草本热茶 / 专注特调"
                     PrepDockKind.STRATEGY -> "切换行进策略"
                     PrepDockKind.BEACON -> "深梦信标与快捷行装"
+                    PrepDockKind.SPIRIT -> "选择书桌伴读灵兽"
                 }
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1079,8 +1495,11 @@ private fun JourneyPrepModal(
                                     ) {
                                         TeaCupIconBox(tea = tea, unlocked = true, active = selected, size = 44.dp)
                                         Column(modifier = Modifier.weight(1f)) {
-                                            Text(tea.name, style = MaterialTheme.typography.titleSmall, color = DreamTrailColors.ParchmentText)
-                                            if (selected) TagBadge("已选热茶", DreamTrailColors.LanternAmber)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                                Text(tea.name, style = MaterialTheme.typography.titleSmall, color = DreamTrailColors.ParchmentText)
+                                                if (tea.favoredForFocus) TagBadge("专注优选", DreamTrailColors.SageMist)
+                                                if (selected) TagBadge("已选", DreamTrailColors.LanternAmber)
+                                            }
                                             Text(tea.subtitle, style = MaterialTheme.typography.bodySmall, color = DreamTrailColors.MutedInk)
                                         }
                                     }
@@ -1189,9 +1608,312 @@ private fun JourneyPrepModal(
                             }
                         }
                     }
+
+                    PrepDockKind.SPIRIT -> {
+                        val unlockedSpirits = ContentCatalog.focusSpirits.filter { it.id in unlockedSpiritIds }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (player.activeSpiritId == null) DreamTrailColors.LanternAmber.copy(alpha = 0.16f) else DreamTrailColors.CardElevated,
+                            border = BorderStroke(1.dp, if (player.activeSpiritId == null) DreamTrailColors.LanternAmber else DreamTrailColors.CardOutline),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    onSelectSpirit(null)
+                                    onDismiss()
+                                }
+                        ) {
+                            Text(
+                                text = "暂不带伴读灵兽（仅保留已收藏灵兽的永久全队属性）",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = DreamTrailColors.ParchmentText,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                        if (unlockedSpirits.isEmpty()) {
+                            Text(
+                                text = "在白昼专注或夜间探索中累计探访各区域，即可随机结识 16 只可爱伴读小灵兽。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = DreamTrailColors.MutedInk
+                            )
+                        } else {
+                            for (spirit in unlockedSpirits) {
+                                val selected = player.activeSpiritId == spirit.id
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (selected) DreamTrailColors.SageMist.copy(alpha = 0.16f) else DreamTrailColors.CardElevated,
+                                    border = BorderStroke(1.dp, if (selected) DreamTrailColors.SageMist else DreamTrailColors.CardOutline),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onSelectSpirit(spirit.id)
+                                            onDismiss()
+                                        }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        FocusSpiritAvatar(spirit = spirit, size = 44.dp, unlocked = true, active = selected)
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("${spirit.name} · ${spirit.title}", style = MaterialTheme.typography.titleSmall, color = DreamTrailColors.ParchmentText)
+                                            Text(
+                                                text = "搭配声景：${spirit.preferredSoundscape} · 墨晶+${spirit.inkBonusPercent}% / 专注经验+${spirit.focusXpBonusPercent}%",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = DreamTrailColors.MutedInk
+                                            )
+                                        }
+                                        if (selected) TagBadge("伴读中", DreamTrailColors.SageMist)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun FocusTagAndTaskCard(
+    player: PlayerState,
+    onSelectTag: (String) -> Unit,
+    onAddCustomTag: (String, BuildArchetype) -> Unit,
+    onAddTask: (String, String, Int) -> Unit,
+    onSelectActiveTask: (String?) -> Unit,
+    onCompleteTask: (String) -> Unit,
+    onDeleteTask: (String) -> Unit,
+    onClearCompletedTasks: () -> Unit,
+    isBusy: Boolean
+) {
+    var taskDraft by rememberSaveable { mutableStateOf("") }
+    var targetPomodoros by rememberSaveable { mutableIntStateOf(1) }
+    var showAddTagDialog by rememberSaveable { mutableStateOf(false) }
+    var submittedDraft by rememberSaveable { mutableStateOf<String?>(null) }
+    var submittedTaskIds by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    LaunchedEffect(player.focusTasks) {
+        val submitted = submittedDraft
+        if (submitted != null && player.focusTasks.any { it.title == submitted && it.id !in submittedTaskIds }) {
+            if (taskDraft.trim().take(40) == submitted) taskDraft = ""
+            submittedDraft = null
+        }
+    }
+    val allTags = remember(player.customFocusTags) {
+        ContentCatalog.defaultFocusTags + player.customFocusTags
+    }
+    val openTasks = remember(player.focusTasks) {
+        player.focusTasks.filter { !it.completed }
+    }
+
+    JournalCard(borderColor = DreamTrailColors.LanternAmber.copy(alpha = 0.5f)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "专注方向与今日行囊待办",
+                style = MaterialTheme.typography.titleSmall,
+                color = DreamTrailColors.LanternAmber,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(
+                onClick = { showAddTagDialog = true },
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                Text("+ 自定义标签", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            for (tag in allTags) {
+                val selected = player.selectedFocusTagId == tag.id
+                FilterChip(
+                    selected = selected,
+                    onClick = { onSelectTag(tag.id) },
+                    label = { Text(tag.name) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = archetypeColor(tag.archetype).copy(alpha = 0.24f),
+                        selectedLabelColor = DreamTrailColors.ParchmentText
+                    )
+                )
+            }
+        }
+
+        allTags.firstOrNull { it.id == player.selectedFocusTagId }?.let { activeTag ->
+            Text(
+                text = activeTag.summary,
+                style = MaterialTheme.typography.bodySmall,
+                color = DreamTrailColors.SageMist
+            )
+        }
+
+        HorizontalDivider(color = DreamTrailColors.CardOutline)
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = taskDraft,
+                onValueChange = { taskDraft = it },
+                placeholder = { Text("输入今日专注任务，如「精读第 3 章」") },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    val trimmed = taskDraft.trim()
+                    if (trimmed.isNotEmpty()) {
+                        onAddTask(trimmed, player.selectedFocusTagId, targetPomodoros)
+                        submittedDraft = trimmed.take(40)
+                        submittedTaskIds = player.focusTasks.map { it.id }
+                    }
+                },
+                enabled = taskDraft.isNotBlank() && !isBusy,
+                modifier = Modifier.heightIn(min = 48.dp)
+            ) {
+                Text("添加")
+            }
+        }
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text("预计番茄：", style = MaterialTheme.typography.labelMedium, color = DreamTrailColors.MutedInk)
+            listOf(1, 2, 3, 4).forEach { cnt ->
+                FilterChip(
+                    selected = targetPomodoros == cnt,
+                    onClick = { targetPomodoros = cnt },
+                    label = { Text("${cnt}轮") }
+                )
+            }
+        }
+
+        if (openTasks.isEmpty()) {
+            Text(
+                text = "暂无待办，可添加任务并在专注时推进，完成待办额外领金币与墨晶悬赏。",
+                style = MaterialTheme.typography.bodySmall,
+                color = DreamTrailColors.MutedInk
+            )
+        } else {
+            for (task in openTasks) {
+                val isLinked = player.activeFocusTaskId == task.id
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = if (isLinked) DreamTrailColors.LanternAmber.copy(alpha = 0.14f) else DreamTrailColors.CardElevated,
+                    border = BorderStroke(1.dp, if (isLinked) DreamTrailColors.LanternAmber else DreamTrailColors.CardOutline),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onSelectActiveTask(if (isLinked) null else task.id) }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Rounded.TaskAlt,
+                            contentDescription = null,
+                            tint = if (isLinked) DreamTrailColors.LanternAmber else DreamTrailColors.MutedInk,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = task.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = DreamTrailColors.ParchmentText,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = if (isLinked) {
+                                    "本轮关联中 · 进度 ${task.completedPomodoros}/${task.targetPomodoros}"
+                                } else {
+                                    "点按设为本轮目标 · 进度 ${task.completedPomodoros}/${task.targetPomodoros}"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isLinked) DreamTrailColors.LanternAmber else DreamTrailColors.MutedInk
+                            )
+                        }
+                        TextButton(onClick = { onCompleteTask(task.id) }) {
+                            Text("完成", color = DreamTrailColors.SageMist)
+                        }
+                        IconButton(onClick = { onDeleteTask(task.id) }) {
+                            Icon(Icons.Rounded.DeleteOutline, contentDescription = "删除", tint = DreamTrailColors.MutedInk)
+                        }
+                    }
+                }
+            }
+        }
+        val completedCount = player.focusTasks.count { it.completed }
+        if (completedCount > 0) {
+            TextButton(onClick = onClearCompletedTasks, enabled = !isBusy) {
+                Text("清理已完成（$completedCount）")
+            }
+        }
+    }
+
+    if (showAddTagDialog) {
+        var newName by rememberSaveable { mutableStateOf("") }
+        var pickedArch by rememberSaveable { mutableStateOf(BuildArchetype.SCHOLAR) }
+        LaunchedEffect(player.customFocusTags) {
+            if (player.customFocusTags.any { it.name == newName.trim() }) showAddTagDialog = false
+        }
+        AlertDialog(
+            onDismissRequest = { showAddTagDialog = false },
+            containerColor = DreamTrailColors.CardSurface,
+            title = { Text("新建专注标签", color = DreamTrailColors.ParchmentText) },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { if (it.length <= 10) newName = it },
+                        label = { Text("标签名称（最多 10 字）") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text("关联流派倾向：", style = MaterialTheme.typography.labelMedium, color = DreamTrailColors.MutedInk)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        BuildArchetype.entries.forEach { arch ->
+                            FilterChip(
+                                selected = pickedArch == arch,
+                                onClick = { pickedArch = arch },
+                                label = { Text(arch.displayName) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onAddCustomTag(newName, pickedArch)
+                    },
+                    enabled = newName.isNotBlank() && !isBusy
+                ) {
+                    Text("保存标签")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddTagDialog = false }) { Text("取消") }
+            }
+        )
     }
 }

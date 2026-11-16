@@ -34,6 +34,9 @@ interface DreamTrailDao {
     @Query("UPDATE expedition_sessions SET status = :status, end_at_utc_ms = :endAtUtcMs WHERE session_id = :sessionId AND status = 'RUNNING'")
     suspend fun markSessionTerminal(sessionId: String, status: String, endAtUtcMs: Long): Int
 
+    @Query("UPDATE expedition_sessions SET distraction_count = :distractionCount, flip_focus_sec = :flipFocusSec WHERE session_id = :sessionId AND status = 'RUNNING'")
+    suspend fun updateRunningSessionFocusStats(sessionId: String, distractionCount: Int, flipFocusSec: Long): Int
+
     @Query("DELETE FROM expedition_sessions")
     suspend fun clearSessions()
 

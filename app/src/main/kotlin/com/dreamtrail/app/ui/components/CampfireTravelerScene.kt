@@ -172,6 +172,8 @@ fun DrawScope.drawRegionBackdrop(
         RegionId.CLOUD_SANCTUARY -> listOf(Color(0xFF0F1A28), Color(0xFF1A313D), Color(0xFF24414B), Color(0xFF192E38))
         RegionId.DREAM_SEA -> listOf(Color(0xFF0A1228), Color(0xFF162448), Color(0xFF1A2D58), Color(0xFF111E3D))
         RegionId.ASTRAL_ARCH -> listOf(Color(0xFF1A1424), Color(0xFF2A2136), Color(0xFF342A3E), Color(0xFF1E1829))
+        RegionId.SUNLIT_ATHENAEUM -> listOf(Color(0xFF262A3E), Color(0xFF454C6B), Color(0xFF595D75), Color(0xFF343546))
+        RegionId.DAWNLIGHT_SPIRE -> listOf(Color(0xFF281F36), Color(0xFF5B4157), Color(0xFF6A4E5A), Color(0xFF3A2C39))
     }
 
     drawRect(
@@ -292,6 +294,26 @@ fun DrawScope.drawRegionBackdrop(
                 style = Stroke(width = 1.6f)
             )
         }
+        RegionId.SUNLIT_ATHENAEUM -> {
+            // Classical open-air colonnade & library roof
+            for (px in listOf(0.16f, 0.28f, 0.68f, 0.80f)) {
+                drawRect(Color(0xFF6B657B), Offset(w * px - 4f, h * 0.36f), Size(8f, h * 0.42f))
+            }
+            drawRect(Color(0xFFE2A959).copy(alpha = 0.55f), Offset(w * 0.12f, h * 0.32f), Size(w * 0.74f, 6f))
+        }
+        RegionId.DAWNLIGHT_SPIRE -> {
+            // Towering golden clock spire & dawn horizon halo
+            val sx = w * 0.72f
+            drawRect(Color(0xFF7B5E68), Offset(sx - 12f, h * 0.24f), Size(24f, h * 0.54f))
+            val cap = Path().apply {
+                moveTo(sx, h * 0.08f)
+                lineTo(sx - 15f, h * 0.24f)
+                lineTo(sx + 15f, h * 0.24f)
+                close()
+            }
+            drawPath(cap, color = DreamTrailColors.LanternAmber.copy(alpha = 0.8f))
+            drawCircle(Color(0xFFFFE0A3), radius = 7f, center = Offset(sx, h * 0.38f))
+        }
     }
 
     // Distant rolling ridge
@@ -354,6 +376,113 @@ private fun DrawScope.drawCompanionMiniSprite(
         "comp_cen" -> {
             // Crystal lantern
             drawCircle(DreamTrailColors.LanternAmber, radius = 3.8f, center = Offset(x + 10f * dir, groundY - 15f + bob))
+        }
+        "comp_wen" -> {
+            // Open folio book
+            drawRect(DreamTrailColors.ParchmentText, Offset(x + 5f * dir, groundY - 22f + bob), Size(8f, 10f))
+        }
+        "comp_zhaolu" -> {
+            // Brass chronometer disk
+            drawCircle(DreamTrailColors.LanternAmber, radius = 4.2f, center = Offset(x + 9f * dir, groundY - 20f + bob), style = Stroke(2f))
+        }
+    }
+}
+
+/**
+ * White-day/study window desk illustration for Focus modes & preview cards.
+ */
+@Composable
+fun FocusDeskScene(
+    isRunning: Boolean,
+    reduceMotion: Boolean,
+    regionId: RegionId = RegionId.SUNLIT_ATHENAEUM,
+    companionId: String? = null,
+    spiritId: String? = null,
+    isFaceDown: Boolean = false,
+    height: Dp = 122.dp,
+    modifier: Modifier = Modifier
+) {
+    val phaseState = if (reduceMotion) null else {
+        rememberInfiniteTransition(label = "focusDesk").animateFloat(
+            initialValue = 0f,
+            targetValue = (2 * Math.PI).toFloat(),
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = if (isRunning) 3200 else 4400, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart
+            ),
+            label = "focusPhase"
+        )
+    }
+
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(height)
+    ) {
+        val phase = phaseState?.value ?: 0f
+        val w = size.width
+        val h = size.height
+        val accent = regionAccentColor(regionId)
+
+        // Warm daytime studio wall + sunlit window
+        drawRect(
+            brush = Brush.verticalGradient(listOf(Color(0xFF283042), Color(0xFF1D2230))),
+            size = size
+        )
+        // Window pane showing sky
+        val winX = w * 0.56f
+        val winW = w * 0.36f
+        val winH = h * 0.52f
+        drawRect(
+            brush = Brush.verticalGradient(listOf(accent.copy(alpha = 0.45f), Color(0xFF3E4B68))),
+            topLeft = Offset(winX, h * 0.12f),
+            size = Size(winW, winH)
+        )
+        drawRect(
+            color = DreamTrailColors.CardOutline,
+            topLeft = Offset(winX, h * 0.12f),
+            size = Size(winW, winH),
+            style = Stroke(width = 3f)
+        )
+        drawLine(DreamTrailColors.CardOutline, Offset(winX + winW / 2f, h * 0.12f), Offset(winX + winW / 2f, h * 0.12f + winH), strokeWidth = 2f)
+
+        // Desk surface
+        drawRect(Color(0xFF4B372A), Offset(0f, h * 0.68f), Size(w, h * 0.32f))
+        drawLine(Color(0xFF7D5C45), Offset(0f, h * 0.68f), Offset(w, h * 0.68f), strokeWidth = 3f)
+
+        // Desk lamp + warm glow
+        val lampHead = Offset(w * 0.18f, h * 0.34f)
+        val glowAlpha = if (isFaceDown) 0.42f else 0.28f
+        drawCircle(
+            brush = Brush.radialGradient(listOf(DreamTrailColors.LanternAmber.copy(alpha = glowAlpha), Color.Transparent)),
+            radius = w * 0.22f,
+            center = Offset(w * 0.30f, h * 0.56f)
+        )
+        drawLine(Color(0xFFD2A45E), Offset(w * 0.12f, h * 0.68f), Offset(w * 0.14f, h * 0.36f), strokeWidth = 4f, cap = StrokeCap.Round)
+        drawArc(DreamTrailColors.LanternAmber, 180f, 180f, true, Offset(lampHead.x - 14f, lampHead.y - 8f), Size(28f, 18f))
+
+        // Open notebook & pen on desk
+        drawRect(DreamTrailColors.ParchmentText.copy(alpha = 0.92f), Offset(w * 0.26f, h * 0.72f), Size(w * 0.26f, h * 0.16f))
+        drawLine(accent.copy(alpha = 0.65f), Offset(w * 0.39f, h * 0.72f), Offset(w * 0.39f, h * 0.88f), strokeWidth = 2f)
+
+        // Steaming tea/coffee mug
+        drawRoundRect(DreamTrailColors.SageMist, Offset(w * 0.58f, h * 0.70f), Size(22f, 20f))
+        val steamLift = if (reduceMotion) 0f else sin(phase) * 3f
+        drawLine(DreamTrailColors.ParchmentText.copy(alpha = 0.55f), Offset(w * 0.58f + 7f, h * 0.66f), Offset(w * 0.58f + 9f, h * 0.56f + steamLift), strokeWidth = 2f, cap = StrokeCap.Round)
+        drawLine(DreamTrailColors.ParchmentText.copy(alpha = 0.55f), Offset(w * 0.58f + 15f, h * 0.65f), Offset(w * 0.58f + 13f, h * 0.54f - steamLift), strokeWidth = 2f, cap = StrokeCap.Round)
+
+        // Companion studying beside the desk
+        if (companionId != null) {
+            drawCompanionMiniSprite(companionId, w * 0.44f, h * 0.68f, bob = 0f, facingRight = true)
+        }
+        // Little Focus Spirit sitting on desk corner
+        if (spiritId != null) {
+            val sb = if (reduceMotion) 0f else sin(phase + 1.2f) * 1.5f
+            val sx = w * 0.76f
+            val sy = h * 0.63f + sb
+            drawCircle(accent, radius = 9f, center = Offset(sx, sy))
+            drawCircle(DreamTrailColors.ParchmentText, radius = 2f, center = Offset(sx - 3f, sy - 1f))
+            drawCircle(DreamTrailColors.ParchmentText, radius = 2f, center = Offset(sx + 3f, sy - 1f))
         }
     }
 }

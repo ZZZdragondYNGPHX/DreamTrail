@@ -82,7 +82,7 @@ class MechanicsRegressionTest {
     }
 
     @Test fun `backup rejects impossible astral branches passive duplicates and swapped gear slots`() {
-        val base = SaveBackupPayload(exportedAtUtcMs = 1, contentVersion = 4, rulesVersion = 4,
+        val base = SaveBackupPayload(exportedAtUtcMs = 1, contentVersion = ContentCatalog.CONTENT_VERSION, rulesVersion = ContentCatalog.RULES_VERSION,
             playerState = PlayerState(level = 20), budgetState = RewardBudgetState(), discoveryState = DiscoveryState(), inventory = emptyList())
         fun invalid(player: PlayerState, inventory: List<EquipmentInstance> = emptyList()) {
             assertTrue(SaveBackupCodec.decodeAndValidate(SaveBackupCodec.encode(base.copy(playerState = player, inventory = inventory))) is ActionOutcome.Failure)

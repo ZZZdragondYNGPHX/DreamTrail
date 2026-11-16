@@ -38,6 +38,7 @@ import com.dreamtrail.app.ui.theme.DreamTrailColors
 import com.dreamtrail.core.content.ContentCatalog
 import com.dreamtrail.core.model.EquipmentInstance
 import com.dreamtrail.core.model.RegionId
+import com.dreamtrail.core.model.SessionMode
 import com.dreamtrail.core.model.SettlementResult
 import com.dreamtrail.core.model.SouvenirDef
 
@@ -54,7 +55,9 @@ fun SettlementReportCard(
     primaryActionLabel: String,
     onPrimaryAction: () -> Unit,
     modifier: Modifier = Modifier,
-    workshopLevel: Int = 0
+    workshopLevel: Int = 0,
+    onSelectMood: ((String) -> Unit)? = null,
+    onStartBreak: ((Int) -> Unit)? = null
 ) {
     val route = remember(report.routeId) { ContentCatalog.routeById(report.routeId) }
     val regionId = route?.regionId ?: RegionId.MISTWOOD
@@ -111,16 +114,20 @@ fun SettlementReportCard(
                     verticalArrangement = Arrangement.spacedBy(2.dp)
                 ) {
                     Text(
-                        text = "旅程战报 · ${route?.name ?: report.routeId}",
+                        text = if (report.sessionMode.isFocus) {
+                            "白昼专注战报 · ${route?.name ?: report.routeId}"
+                        } else {
+                            "旅程战报 · ${route?.name ?: report.routeId}"
+                        },
                         style = MaterialTheme.typography.titleMedium,
-                        color = DreamTrailColors.ParchmentText,
+                        color = Color(0xFFF2ECE1),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "${formatDurationZh(report.rawDurationSeconds)} · ${report.completedNodes} 段探索 · ${report.strategy.displayName}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = DreamTrailColors.MutedInk,
+                        color = Color(0xFFC7C0B3),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -213,12 +220,33 @@ fun SettlementReportCard(
                     subtitle = "首领战利"
                 )
             }
+            if (report.inspirationInkGained > 0L) {
+                LootCurrencyCell(
+                    kind = ResourceVisualKind.INK,
+                    accent = Color(0xFF7FD1BE),
+                    title = "+${report.inspirationInkGained} 澄明墨晶",
+                    subtitle = "专注灵感"
+                )
+            }
         }
 
         val journeyTags = buildList {
+            if (report.sessionMode != SessionMode.SLEEP) add(report.sessionMode.displayName to DreamTrailColors.LanternAmber)
             report.nightPhenomenonName?.let { add("夜象：$it" to DreamTrailColors.StarlightBlue) }
+            report.dayPhenomenonName?.let { add("日象：$it" to DreamTrailColors.LanternAmber) }
             report.activeCompanionName?.let { add("随行：$it" to DreamTrailColors.SageMist) }
-            report.teaBlendName?.let { add("热茶：$it" to DreamTrailColors.LanternAmber) }
+            report.teaBlendName?.let { add("茶饮：$it" to DreamTrailColors.LanternAmber) }
+            report.linkedTaskTitle?.let {
+                val prefix = if (report.taskCompletedNow) "待办达成：" else "推进待办："
+                add("$prefix$it" to DreamTrailColors.SageMist)
+            }
+            if (report.nightPrepGained > 0) add("夜行筹备 +${report.nightPrepGained}%" to DreamTrailColors.StarlightBlue)
+            if (report.nightPrepTierUsed > 0) add("夜行筹备 阶${report.nightPrepTierUsed}" to DreamTrailColors.StarlightBlue)
+            if (report.focusVigourGrantedMinutes > 0) add("晨曦/清思 ${report.focusVigourGrantedMinutes}m" to DreamTrailColors.SageMist)
+            for (sid in report.newSpiritIds) {
+                val sName = ContentCatalog.spiritById(sid)?.name ?: sid
+                add("结识灵兽：$sName" to DreamTrailColors.SageMist)
+            }
             if (report.dreamBeaconTier > 0) add("深梦信标 阶${report.dreamBeaconTier}" to Color(0xFFB39DFF))
             if (report.eliteVictories > 0) add("精英击败 ${report.eliteVictories}" to DreamTrailColors.CoralWarn)
         }
@@ -500,17 +528,27 @@ fun SettlementReportCard(
                 color = DreamTrailColors.StarlightBlue
             )
         }
+        if (report.pendingTeaEchoTitle != null) {
+            Text(
+                text = "茶歇奇遇待抉择「${report.pendingTeaEchoTitle}」：关闭战报即可在旅程页择选。",
+                style = MaterialTheme.typography.bodySmall,
+                color = DreamTrailColors.LanternAmber
+            )
+        }
 
+        val blessingLabel = if (report.sessionMode.isFocus) "定心加成说明" else "安歇祝福说明"
         TextButton(
             onClick = { showDetailNotes = !showDetailNotes },
             modifier = Modifier.heightIn(min = 48.dp)
         ) {
-            Text(if (showDetailNotes) "收起安歇祝福说明" else "安歇祝福说明（+$bonusPctText 已到账）")
+            Text(if (showDetailNotes) "收起$blessingLabel" else "$blessingLabel（+$bonusPctText 已到账）")
         }
 
         if (showDetailNotes) {
             Text(
-                text = if (report.sleepBonusBasisPoints > 300) {
+                text = if (report.sessionMode.isFocus) {
+                    "定心加成共 +$bonusPctText（已随基础收益全部安全入账）。无论途中是否切出查看资料，基础收益与战利都会完整保留；完整专注、书斋与翻转静心可额外提高至多 +10%。"
+                } else if (report.sleepBonusBasisPoints > 300) {
                     "已包含基础安歇祝福与睡眠补发，共 $bonusPctText。补发金币 ${report.blessingGold - report.initialBlessingGold}、经验 ${report.blessingXp - report.initialBlessingXp}，已计入上方收获。"
                 } else {
                     "所有旅人都可获得 +3% 基础安歇祝福，取整余量会保留到后续旅程，不依赖手环或健康权限。"
@@ -518,6 +556,39 @@ fun SettlementReportCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = DreamTrailColors.MutedInk
             )
+        }
+
+        if (onSelectMood != null) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(
+                    text = if (report.reflectionMood != null) "本轮心境：${report.reflectionMood}" else "随手记一句状态（可选）",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = DreamTrailColors.MutedInk
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("状态充沛", "平稳推进", "略感疲惫").forEach { mood ->
+                        androidx.compose.material3.FilterChip(
+                            selected = report.reflectionMood == mood,
+                            onClick = { onSelectMood(mood) },
+                            label = { Text(mood) }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (onStartBreak != null && report.recommendedBreakMinutes > 0) {
+            androidx.compose.material3.OutlinedButton(
+                onClick = { onStartBreak(report.recommendedBreakMinutes) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 48.dp)
+            ) {
+                Text("开启 ${report.recommendedBreakMinutes} 分钟茶歇放松倒计时")
+            }
         }
 
         Button(

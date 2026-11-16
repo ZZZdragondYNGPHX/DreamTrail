@@ -13,6 +13,7 @@ import com.dreamtrail.core.content.ContentCatalog
 import com.dreamtrail.core.engine.ActionOutcome
 import com.dreamtrail.core.engine.ExpeditionSimulator
 import com.dreamtrail.core.engine.ProgressionEngine
+import com.dreamtrail.core.engine.RewardBudgetCalculator
 import com.dreamtrail.core.model.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
@@ -34,6 +35,9 @@ enum class AppTab(val label: String) {
 data class JourneyUiState(
     val selectedRouteId: String = "route_mistwood_outer",
     val selectedStrategy: ExpeditionStrategy = ExpeditionStrategy.STEADY,
+    val selectedMode: SessionMode = SessionMode.SLEEP,
+    val selectedPomodoroMinutes: Int = 25,
+    val selectedNapMinutes: Int = 30,
     val isSubmittingDeparture: Boolean = false,
     val isSettling: Boolean = false,
     val isPerformingAction: Boolean = false,
@@ -49,7 +53,15 @@ data class JourneyUiState(
     val phoneDistractionCount: Int = 0,
     val sleepGuardWarning: String? = null,
     val isScreenPinned: Boolean = false,
-    val nightPhenomenon: NightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(0L)
+    val nightPhenomenon: NightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(0L),
+    val dayPhenomenon: DayPhenomenon = ContentCatalog.dayPhenomenonForUtcMs(0L),
+    val remainingFocusBudgetSeconds: Long = RewardBudgetCalculator.ROLLING_CREDIT_CAP_SECONDS,
+    val isSoundscapeSheetOpen: Boolean = false,
+    val isBreathingDialogOpen: Boolean = false,
+    val isStatsSheetOpen: Boolean = false,
+    val breakRemainingSeconds: Int = 0,
+    val isFaceDownFlipActive: Boolean = false,
+    val targetCountdownFinished: Boolean = false
 )
 
 enum class BackupAction(val label: String) {
@@ -82,10 +94,20 @@ class DreamTrailViewModel(
 
     private var previewTickerJob: Job? = null
     private var syncedSelectionFromSave = false
+    private var flipFocusAccumulatedSeconds = 0L
+    private var lastFlipSyncSeconds = 0L
+    private var observedSessionId: String? = null
+    private var breakDeadlineMs: Long? = null
+
+    private fun timerNowMs(): Long = clock.elapsedRealtimeMs() ?: clock.currentWallTimeUtcMs()
 
     init {
+        val nowMs = clock.currentWallTimeUtcMs()
         _uiState.update {
-            it.copy(nightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(clock.currentWallTimeUtcMs()))
+            it.copy(
+                nightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(nowMs),
+                dayPhenomenon = ContentCatalog.dayPhenomenonForUtcMs(nowMs)
+            )
         }
         viewModelScope.launch {
             when (val res = repository.ensureInitializedAndRecover()) {
@@ -118,14 +140,30 @@ class DreamTrailViewModel(
                     _uiState.update {
                         it.copy(
                             selectedRouteId = data.playerState.lastRouteId,
-                            selectedStrategy = data.playerState.lastStrategy
+                            selectedStrategy = data.playerState.lastStrategy,
+                            selectedPomodoroMinutes = data.settings.defaultPomodoroMinutes.coerceIn(5, 180),
+                            selectedNapMinutes = data.settings.defaultNapMinutes.coerceIn(5, 120)
                         )
                     }
                 }
                 val running = data.runningSession
+                val nowSec = clock.currentWallTimeUtcMs() / 1000L
+                val focusBudgetLeft = RewardBudgetCalculator.remainingFocusBudgetSeconds(data.budgetState, nowSec)
                 if (running != null) {
+                    if (observedSessionId != running.sessionId) {
+                        observedSessionId = running.sessionId
+                        flipFocusAccumulatedSeconds = running.flipFocusSeconds
+                        lastFlipSyncSeconds = running.flipFocusSeconds
+                        _uiState.update { it.copy(phoneDistractionCount = running.distractionCount, isFaceDownFlipActive = false) }
+                    }
+                    if (running.flipFocusSeconds > flipFocusAccumulatedSeconds) {
+                        flipFocusAccumulatedSeconds = running.flipFocusSeconds
+                    }
                     refreshPreviewNow(running, data.budgetState)
                 } else {
+                    observedSessionId = null
+                    flipFocusAccumulatedSeconds = 0L
+                    lastFlipSyncSeconds = 0L
                     _uiState.update {
                         it.copy(
                             activePreview = null,
@@ -133,7 +171,10 @@ class DreamTrailViewModel(
                             showWakeConfirm = false,
                             phoneDistractionCount = 0,
                             sleepGuardWarning = null,
-                            isScreenPinned = false
+                            isScreenPinned = false,
+                            remainingFocusBudgetSeconds = focusBudgetLeft,
+                            targetCountdownFinished = false,
+                            isFaceDownFlipActive = false
                         )
                     }
                 }
@@ -144,17 +185,48 @@ class DreamTrailViewModel(
     fun setForegroundActive(active: Boolean) {
         previewTickerJob?.cancel()
         if (!active) return
+        val nowMs = clock.currentWallTimeUtcMs()
         _uiState.update {
-            it.copy(nightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(clock.currentWallTimeUtcMs()))
+            it.copy(
+                nightPhenomenon = ContentCatalog.nightPhenomenonForUtcMs(nowMs),
+                dayPhenomenon = ContentCatalog.dayPhenomenonForUtcMs(nowMs)
+            )
         }
         previewTickerJob = viewModelScope.launch {
+            var tickCounter = 0
             while (isActive) {
                 val snap = dataState.value
                 val running = snap.runningSession
                 if (running != null) {
+                    if (_uiState.value.isFaceDownFlipActive && running.sessionMode.isFocus) {
+                        flipFocusAccumulatedSeconds++
+                        if (flipFocusAccumulatedSeconds - lastFlipSyncSeconds >= 10L) {
+                            lastFlipSyncSeconds = flipFocusAccumulatedSeconds
+                            val distractions = maxOf(running.distractionCount, _uiState.value.phoneDistractionCount)
+                            repository.recordRunningSessionFocusStats(running.sessionId, distractions, flipFocusAccumulatedSeconds)
+                        }
+                    }
                     refreshPreviewNow(running, snap.budgetState)
+                } else if (tickCounter % 15 == 0) {
+                    val sec = clock.currentWallTimeUtcMs() / 1000L
+                    val focusLeft = RewardBudgetCalculator.remainingFocusBudgetSeconds(snap.budgetState, sec)
+                    _uiState.update { it.copy(remainingFocusBudgetSeconds = focusLeft) }
                 }
-                delay(15_000L)
+
+                val brk = _uiState.value.breakRemainingSeconds
+                if (brk > 0) {
+                    val nextBrk = (((breakDeadlineMs ?: timerNowMs()) - timerNowMs()).coerceAtLeast(0L) + 999L)
+                        .div(1000L).toInt()
+                    if (nextBrk == 0) breakDeadlineMs = null
+                    _uiState.update {
+                        it.copy(
+                            breakRemainingSeconds = nextBrk,
+                            statusNotice = if (nextBrk == 0) "茶歇休息时间到，可以神清气爽地开启下一轮啦。" else it.statusNotice
+                        )
+                    }
+                }
+                tickCounter++
+                delay(1_000L)
             }
         }
     }
@@ -162,8 +234,21 @@ class DreamTrailViewModel(
     private fun refreshPreviewNow(session: ExpeditionSession, budget: RewardBudgetState) {
         val resolved = DurationResolver.resolveForPreview(session, clock)
         val preview = ExpeditionSimulator.previewProgress(session, resolved.durationSeconds, budget)
-        val phenomenon = ContentCatalog.nightPhenomenonForUtcMs(clock.currentWallTimeUtcMs())
-        _uiState.update { it.copy(activePreview = preview, nightPhenomenon = phenomenon) }
+        val nowMs = clock.currentWallTimeUtcMs()
+        val nightPhenom = ContentCatalog.nightPhenomenonForUtcMs(nowMs)
+        val dayPhenom = ContentCatalog.dayPhenomenonForUtcMs(nowMs)
+        val focusLeft = RewardBudgetCalculator.remainingFocusBudgetSeconds(budget, nowMs / 1000L)
+        val targetSec = session.targetDurationSeconds
+        val finished = targetSec != null && resolved.durationSeconds >= targetSec
+        _uiState.update {
+            it.copy(
+                activePreview = preview,
+                nightPhenomenon = nightPhenom,
+                dayPhenomenon = dayPhenom,
+                remainingFocusBudgetSeconds = focusLeft,
+                targetCountdownFinished = finished
+            )
+        }
     }
 
     fun selectRoute(routeId: String) {
@@ -174,29 +259,70 @@ class DreamTrailViewModel(
         _uiState.update { it.copy(selectedStrategy = strategy, errorMessage = null) }
     }
 
+    fun selectMode(mode: SessionMode) {
+        _uiState.update { it.copy(selectedMode = mode, errorMessage = null) }
+    }
+
+    fun selectPomodoroMinutes(minutes: Int) {
+        val clamped = minutes.coerceIn(5, 180)
+        _uiState.update { it.copy(selectedPomodoroMinutes = clamped) }
+        updateSettings { it.copy(defaultPomodoroMinutes = clamped) }
+    }
+
+    fun selectNapMinutes(minutes: Int) {
+        val clamped = minutes.coerceIn(5, 120)
+        _uiState.update { it.copy(selectedNapMinutes = clamped) }
+        updateSettings { it.copy(defaultNapMinutes = clamped) }
+    }
+
     fun startExpedition() {
         val cur = _uiState.value
         if (cur.isSubmittingDeparture || cur.isSettling) return
+        val targetSeconds = when (cur.selectedMode) {
+            SessionMode.FOCUS_POMODORO -> cur.selectedPomodoroMinutes * 60L
+            SessionMode.POWER_NAP -> cur.selectedNapMinutes * 60L
+            SessionMode.SLEEP, SessionMode.FOCUS_FLOW -> null
+        }
+        val player = dataState.value.playerState
+        breakDeadlineMs = null
         _uiState.update {
-                it.copy(
-                    isSubmittingDeparture = true,
-                    errorMessage = null,
-                    retryKind = null,
-                    latestReport = null
-                )
+            it.copy(
+                isSubmittingDeparture = true,
+                errorMessage = null,
+                retryKind = null,
+                latestReport = null,
+                targetCountdownFinished = false,
+                breakRemainingSeconds = 0
+            )
         }
         viewModelScope.launch {
-            when (val res = repository.startExpedition(cur.selectedRouteId, cur.selectedStrategy)) {
+            when (
+                val res = repository.startExpedition(
+                    routeId = cur.selectedRouteId,
+                    strategy = cur.selectedStrategy,
+                    sessionMode = cur.selectedMode,
+                    targetDurationSeconds = targetSeconds,
+                    focusTagId = if (cur.selectedMode.isFocus) player.selectedFocusTagId else null,
+                    linkedTaskId = if (cur.selectedMode.isFocus) player.activeFocusTaskId else null
+                )
+            ) {
                 is ActionOutcome.Success -> {
+                    flipFocusAccumulatedSeconds = 0L
+                    lastFlipSyncSeconds = 0L
                     _uiState.update {
                         it.copy(
                             isSubmittingDeparture = false,
-                            statusNotice = "已确认出发，已开启安眠守夜占屏模式。",
+                            statusNotice = if (cur.selectedMode.isFocus) {
+                                "已进入${cur.selectedMode.displayName}专注陪伴模式。"
+                            } else {
+                                "已确认出发，已开启安眠守夜占屏模式。"
+                            },
                             sleepBlackoutMode = false,
                             showWakeConfirm = false,
                             phoneDistractionCount = 0,
                             sleepGuardWarning = null,
-                            isScreenPinned = false
+                            isScreenPinned = false,
+                            targetCountdownFinished = false
                         )
                     }
                 }
@@ -244,6 +370,14 @@ class DreamTrailViewModel(
         if (cur.isSettling || cur.isSubmittingDeparture) return
         _uiState.update { it.copy(isSettling = true, errorMessage = null, retryKind = null, statusNotice = null) }
         viewModelScope.launch {
+            val running = dataState.value.runningSession
+            if (running != null && (flipFocusAccumulatedSeconds > running.flipFocusSeconds || cur.phoneDistractionCount > running.distractionCount)) {
+                repository.recordRunningSessionFocusStats(
+                    sessionId = running.sessionId,
+                    distractionCount = maxOf(running.distractionCount, cur.phoneDistractionCount),
+                    flipFocusSeconds = maxOf(running.flipFocusSeconds, flipFocusAccumulatedSeconds)
+                )
+            }
             when (val res = repository.endAndSettleExpedition(sessionId)) {
                 is ActionOutcome.Success -> {
                     _uiState.update {
@@ -368,13 +502,13 @@ class DreamTrailViewModel(
 
     fun selectActiveCompanion(companionId: String?) {
         val label = companionId?.let { ContentCatalog.companionById(it)?.name }
-        val msg = if (label != null) "已请「$label」今夜随行" else "已调整为独自出征（伙伴自动留守营地）"
+        val msg = if (label != null) "已请「$label」随行" else "已调整为独自出征（伙伴自动留守营地）"
         runSimpleAction(msg) { repository.selectActiveCompanion(companionId) }
     }
 
     fun selectTeaBlend(teaId: String?) {
         val label = teaId?.let { ContentCatalog.teaBlendById(it)?.name }
-        val msg = if (label != null) "已备好睡前热茶「$label」" else "已收起睡前热茶配置"
+        val msg = if (label != null) "已备好「$label」" else "已收起热茶配置"
         runSimpleAction(msg) { repository.selectTeaBlend(teaId) }
     }
 
@@ -437,6 +571,112 @@ class DreamTrailViewModel(
         }
     }
 
+    fun resolveTeaEcho(chooseOptionA: Boolean) {
+        viewModelScope.launch {
+            when (val res = repository.resolveTeaEcho(chooseOptionA)) {
+                is ActionOutcome.Success -> _uiState.update {
+                    it.copy(statusNotice = "${res.value.echoTitle}：${res.value.summaryText}", errorMessage = null)
+                }
+                is ActionOutcome.Failure -> _uiState.update {
+                    it.copy(errorMessage = res.reason)
+                }
+            }
+        }
+    }
+
+    fun selectFocusSpirit(spiritId: String?) {
+        val name = spiritId?.let { ContentCatalog.spiritById(it)?.name }
+        val msg = if (name != null) "已请「$name」坐在书桌旁伴读" else "已让伴读小灵兽自由玩耍"
+        runSimpleAction(msg) { repository.selectFocusSpirit(spiritId) }
+    }
+
+    fun selectFocusTag(tagId: String) {
+        val label = ContentCatalog.defaultFocusTagById(tagId)?.name
+            ?: dataState.value.playerState.customFocusTags.firstOrNull { it.id == tagId }?.name
+            ?: "当前标签"
+        runSimpleAction("专注方向已切换为「$label」") { repository.selectFocusTag(tagId) }
+    }
+
+    fun addCustomFocusTag(name: String, archetype: BuildArchetype) {
+        runSimpleAction("已新增自定义专注标签「${name.trim().take(10)}」") {
+            repository.addCustomFocusTag(name, archetype)
+        }
+    }
+
+    fun addFocusTask(title: String, tagId: String, targetPomodoros: Int = 1) {
+        runSimpleAction("已将「${title.trim().take(40)}」加入今日行囊待办") {
+            repository.addFocusTask(title, tagId, targetPomodoros)
+        }
+    }
+
+    fun completeFocusTask(taskId: String) {
+        runSimpleAction("待办事项已完成。每天最多发放 6 次悬赏。") {
+            repository.completeFocusTask(taskId)
+        }
+    }
+
+    fun deleteFocusTask(taskId: String) {
+        runSimpleAction("已移出该待办事项") { repository.deleteFocusTask(taskId) }
+    }
+
+    fun clearCompletedFocusTasks() {
+        runSimpleAction("已清理完成的待办，完成统计继续保留。") { repository.clearCompletedFocusTasks() }
+    }
+
+    fun selectActiveFocusTask(taskId: String?) {
+        val title = taskId?.let { tid ->
+            dataState.value.playerState.focusTasks.firstOrNull { it.id == tid }?.title
+        }
+        val msg = if (title != null) "本轮专注将同步推进「$title」" else "已取消关联特定待办"
+        runSimpleAction(msg) { repository.selectActiveFocusTask(taskId) }
+    }
+
+    fun setSoundscapeSheetOpen(open: Boolean) {
+        _uiState.update { it.copy(isSoundscapeSheetOpen = open) }
+    }
+
+    fun setBreathingDialogOpen(open: Boolean) {
+        _uiState.update { it.copy(isBreathingDialogOpen = open) }
+    }
+
+    fun setStatsSheetOpen(open: Boolean) {
+        _uiState.update { it.copy(isStatsSheetOpen = open) }
+    }
+
+    fun startBreakTimer(minutes: Int) {
+        val safeSec = (minutes.coerceIn(1, 30)) * 60
+        breakDeadlineMs = timerNowMs() + safeSec * 1000L
+        _uiState.update {
+            it.copy(
+                latestReport = null,
+                breakRemainingSeconds = safeSec,
+                statusNotice = "已开启 ${safeSec / 60} 分钟茶歇放松倒计时，起身伸个懒腰吧。"
+            )
+        }
+    }
+
+    fun skipBreakTimer() {
+        breakDeadlineMs = null
+        _uiState.update { it.copy(breakRemainingSeconds = 0, statusNotice = "茶歇已结束，随时准备下一段专注。") }
+    }
+
+    fun saveReflectionMood(sessionId: String, mood: String) {
+        viewModelScope.launch {
+            repository.saveReflectionMood(sessionId, mood)
+            _uiState.update { cur ->
+                cur.copy(
+                    latestReport = cur.latestReport?.let { if (it.sessionId == sessionId) it.copy(reflectionMood = mood) else it },
+                    historyDetailReport = cur.historyDetailReport?.let { if (it.sessionId == sessionId) it.copy(reflectionMood = mood) else it },
+                    statusNotice = "已记下今日心境：「$mood」"
+                )
+            }
+        }
+    }
+
+    fun setFaceDownActive(faceDown: Boolean) {
+        _uiState.update { it.copy(isFaceDownFlipActive = faceDown) }
+    }
+
     fun setSleepBlackoutMode(enabled: Boolean) {
         _uiState.update { it.copy(sleepBlackoutMode = enabled) }
     }
@@ -454,14 +694,22 @@ class DreamTrailViewModel(
     }
 
     fun onUserLeftWithScreenOn() {
-        if (dataState.value.runningSession == null) return
+        val running = dataState.value.runningSession ?: return
+        val nextCount = maxOf(_uiState.value.phoneDistractionCount, running.distractionCount) + 1
         _uiState.update { cur ->
-            val nextCount = cur.phoneDistractionCount + 1
+            val warning = if (running.sessionMode.isFocus) {
+                "切出查看也没关系，已为你保留全部基础收益；回到书桌即可继续积累定心加成（已离屏 $nextCount 次）"
+            } else {
+                "检测到守夜期间亮屏切出应用（已分心 $nextCount 次）。请留在守夜屏或直接按电源键锁屏入睡，避免边挂机边玩手机！"
+            }
             cur.copy(
                 phoneDistractionCount = nextCount,
                 sleepBlackoutMode = false,
-                sleepGuardWarning = "检测到守夜期间亮屏切出应用（已分心 $nextCount 次）。请留在守夜屏或直接按电源键锁屏入睡，避免边挂机边玩手机！"
+                sleepGuardWarning = warning
             )
+        }
+        viewModelScope.launch {
+            repository.recordRunningSessionFocusStats(running.sessionId, nextCount, flipFocusAccumulatedSeconds)
         }
     }
 

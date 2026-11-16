@@ -25,6 +25,7 @@ import com.dreamtrail.app.data.repository.AppUiDataState
 import com.dreamtrail.app.ui.BackupAction
 import com.dreamtrail.app.ui.components.JournalCard
 import com.dreamtrail.app.ui.theme.DreamTrailColors
+import com.dreamtrail.app.ui.theme.ThemeMode
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -154,6 +155,44 @@ fun SettingsAndBackupSheet(
                                 Switch(
                                     checked = settings.reduceMotion,
                                     onCheckedChange = { checked -> onUpdateSettings { it.copy(reduceMotion = checked) } }
+                                )
+                            }
+
+                            Text("界面配色主题", style = MaterialTheme.typography.bodyMedium, color = DreamTrailColors.ParchmentText)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                ThemeMode.entries.forEach { mode ->
+                                    val selected = settings.themeMode == mode.id
+                                    OutlinedButton(
+                                        onClick = { onUpdateSettings { it.copy(themeMode = mode.id) } },
+                                        contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp),
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .heightIn(min = 48.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(
+                                            containerColor = if (selected) DreamTrailColors.LanternAmber else DreamTrailColors.CardElevated,
+                                            contentColor = if (selected) DreamTrailColors.LanternInk else DreamTrailColors.ParchmentText
+                                        )
+                                    ) {
+                                        Text(mode.displayName, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                    Text("翻转手机静心加成", style = MaterialTheme.typography.bodyMedium, color = DreamTrailColors.ParchmentText)
+                                    Text("专注期间将手机正面朝下平放于桌面，可累积额外定心加成", style = MaterialTheme.typography.bodySmall, color = DreamTrailColors.MutedInk)
+                                }
+                                Switch(
+                                    checked = settings.flipFocusEnabled,
+                                    onCheckedChange = { checked -> onUpdateSettings { it.copy(flipFocusEnabled = checked) } }
                                 )
                             }
                         }
@@ -289,9 +328,9 @@ fun SettingsAndBackupSheet(
 
                     item {
                         JournalCard {
-                            Text("关于「梦途」", style = MaterialTheme.typography.titleSmall, color = DreamTrailColors.LanternAmber)
+                            Text("关于「昼梦途」", style = MaterialTheme.typography.titleSmall, color = DreamTrailColors.LanternAmber)
                             Text(
-                                text = "首版为纯本地离线单机版本，不收集个人睡眠或设备识别信息，不需要任何健康权限、定位权限或后台常驻服务。如后续版本扩展手环睡眠数据读取，仅作为可选加分项并通过独立提供者契约接入。",
+                                text = "《昼梦途 · SolunaTrail》（v0.4.0）为纯本地离线单机「昼夜专注与睡眠挂机 RPG」：白天配合番茄钟、心流计时、任务与程序化自然声景积累澄明墨晶与夜行筹备，夜晚与小憩安睡即可开启 8 境探索与自动冒险，无需任何健康或敏感隐私权限。",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = DreamTrailColors.MutedInk
                             )

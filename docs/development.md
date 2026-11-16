@@ -24,11 +24,11 @@ bash tools/android-service.sh emulator YourAvdName
 bash tools/android-service.sh stop
 ```
 
-构建与模拟器按顺序运行。构建内存上限 4 GiB，使用单 worker；模拟器内存上限 5 GiB，包含系统与图形开销，以只读模式运行且不保存快照。
+构建与模拟器按顺序运行。专用验证可设置 `ANDROID_AVD_HOME`、`ANDROID_EMULATOR_HOME` 与 `ANDROID_ADB_SERVER_PORT`，把设备磁盘和 adb 服务隔离到可清理的测试目录与端口。构建内存上限 4 GiB，使用单 worker；模拟器内存上限 5 GiB，包含系统与图形开销，以只读模式运行且不保存快照。
 
 调试 APK 位于 `app/build/outputs/apk/debug/app-debug.apk`。
 
-UI 回归测试位于 `app/src/androidTest/`，覆盖标签状态恢复、详情弹窗滚动、热茶选择和守夜结算。测试会替换测试应用的存档，只在本项目的专用模拟器中运行。先通过构建服务生成两个 APK，构建结束后再启动模拟器并安装、执行测试：
+UI 回归测试位于 `app/src/androidTest/`，覆盖标签状态恢复、详情弹窗滚动、热茶选择、夜间守夜结算、白昼专注与声景设置。新增待办添加/完成/清理、呼吸引导和手账入口另需在真实窗口检查。测试会替换测试应用的存档，只在本项目的专用模拟器中运行。先通过构建服务生成两个 APK，构建结束后再启动模拟器并安装、执行测试：
 
 ```bash
 bash tools/android-service.sh build :app:assembleDebug :app:assembleDebugAndroidTest
@@ -61,6 +61,6 @@ bash tools/android-service.sh build :core:test :app:testDebugUnitTest :app:assem
 
 普通构建不需要签名配置；未指定配置时，Release APK 为未签名文件。签名 APK 位于 `app/build/outputs/apk/release/app-release.apk`。
 
-发布前递增 `app/build.gradle.kts` 中的版本号，验证签名和安装流程。GitHub Release 上传 APK 与 SHA-256 校验文件。后续更新使用相同发布密钥；从不同签名的调试包切换时，先导出存档，再卸载并安装发布包。
+发布前递增 `app/build.gradle.kts` 中的版本号，验证签名和安装流程。GitHub Release 上传 APK 与 SHA-256 校验文件。本版只支持当前数据格式；测试和发布验证使用全新安装。设备若装有旧开发版，应卸载后安装，本版不导入旧版存档。后续正式版本使用相同发布密钥。
 
 验证完成后停止测试服务，清理临时设备、测试数据和构建产物；交付 APK 保存在忽略提交的 `dist/`。

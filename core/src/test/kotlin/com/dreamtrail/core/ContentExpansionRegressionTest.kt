@@ -249,23 +249,27 @@ class ContentExpansionRegressionTest {
 
     @Test fun `v4 astral arch chronicles bestiary mastery resonance tier 3 astral chart transmute commissions and loadouts work end to end`() {
         // 1. Catalog counts & versions
-        assertEquals(4, ContentCatalog.CONTENT_VERSION)
-        assertEquals(4, ContentCatalog.RULES_VERSION)
-        assertEquals(6, RegionId.entries.size)
-        assertEquals(18, ContentCatalog.routes.size)
-        assertEquals(42, ContentCatalog.enemies.size)
-        assertEquals(30, ContentCatalog.equipmentDefs.size)
-        assertEquals(78, ContentCatalog.eventTemplates.size)
-        assertEquals(5, ContentCatalog.companionStories.size)
-        assertEquals(7, ContentCatalog.teaBlends.size)
+        assertEquals(5, ContentCatalog.CONTENT_VERSION)
+        assertEquals(5, ContentCatalog.RULES_VERSION)
+        assertEquals(8, RegionId.entries.size)
+        assertEquals(24, ContentCatalog.routes.size)
+        assertEquals(56, ContentCatalog.enemies.size)
+        assertEquals(40, ContentCatalog.equipmentDefs.size)
+        assertEquals(128, ContentCatalog.eventTemplates.size)
+        assertEquals(7, ContentCatalog.companionStories.size)
+        assertEquals(13, ContentCatalog.teaBlends.size)
         assertEquals(7, ContentCatalog.nightPhenomena.size)
-        assertEquals(18, ContentCatalog.souvenirs.size)
-        assertEquals(12, ContentCatalog.morningEchoes.size)
-        assertEquals(6, ContentCatalog.chronicles.size)
-        assertEquals(12, ContentCatalog.astralNodes.size)
-        assertEquals(6, ContentCatalog.transmuteRecipes.size)
-        assertEquals(6, ContentCatalog.commissions.size)
-        assertEquals(20, ContentCatalog.milestones.size)
+        assertEquals(8, ContentCatalog.dayPhenomena.size)
+        assertEquals(24, ContentCatalog.souvenirs.size)
+        assertEquals(16, ContentCatalog.morningEchoes.size)
+        assertEquals(16, ContentCatalog.teaEchoes.size)
+        assertEquals(16, ContentCatalog.focusSpirits.size)
+        assertEquals(6, ContentCatalog.defaultFocusTags.size)
+        assertEquals(8, ContentCatalog.chronicles.size)
+        assertEquals(16, ContentCatalog.astralNodes.size)
+        assertEquals(9, ContentCatalog.transmuteRecipes.size)
+        assertEquals(10, ContentCatalog.commissions.size)
+        assertEquals(30, ContentCatalog.milestones.size)
 
         // 2. Tier-3 (6-point) resonance + Dual-Archetype Synergy + 3rd passive slot
         val w6 = EquipmentInstance("w6", "eq_arch_chronoblade", 6, 5, AffixId.ASTRAL_HARMONY, AffixId.STARLIGHT_INSIGHT)
@@ -377,7 +381,7 @@ class ContentExpansionRegressionTest {
             discoveryState = applied.discoveryState
         )
         assertEquals("comp_cen", snap.activeCompanionId)
-        assertEquals(4, snap.dispatchCompanionIds.size)
+        assertEquals(ContentCatalog.companionStories.size - 1, snap.dispatchCompanionIds.size)
 
         val archRoute = ContentCatalog.routeById("route_astral_arcade")!!
         val sentinel = ContentCatalog.enemyById("enemy_arch_chronicler")!!
@@ -406,7 +410,7 @@ class ContentExpansionRegressionTest {
         )
         val settled = settle(archSess, applied, 28_800L)
         assertEquals("岑", settled.settlement.activeCompanionName)
-        assertEquals(4, settled.settlement.dispatchSummaries.size)
+        assertEquals(ContentCatalog.companionStories.size - 1, settled.settlement.dispatchSummaries.size)
         assertEquals(4, settled.settlement.dreamBeaconTier)
         assertTrue("comm_astral_pendulums" in settled.updatedBundle.discoveryState.completedCommissionIds)
         assertTrue((settled.updatedBundle.discoveryState.chronicleProgress["chron_astral_arch"] ?: 0) >= 1)
@@ -425,5 +429,178 @@ class ContentExpansionRegressionTest {
         val decoded = SaveBackupCodec.decodeAndValidate(encoded)
         assertTrue(decoded is ActionOutcome.Success)
         assertEquals(backup.playerState.loadouts, (decoded as ActionOutcome.Success).value.playerState.loadouts)
+    }
+
+    @Test fun `v5 soluna dual core focus pomodoro flowmodoro poise tasks spirits scriptorium and regions 7 to 8 work end to end`() {
+        // 1. Dual budget isolation: 8h sleep does NOT block daytime 8h focus, and vice versa
+        val initial = bundle()
+        val nightStart = 1_700_000_000L
+        val sleepSess = session(initial, startSec = nightStart).copy(sessionMode = SessionMode.SLEEP)
+        val afterSleep = settle(sleepSess, initial, 8 * 3600L)
+        assertEquals(28_800L, afterSleep.settlement.effectiveCreditedSeconds)
+        assertEquals(0L, afterSleep.settlement.inspirationInkGained)
+        assertEquals(240, afterSleep.settlement.focusVigourGrantedMinutes)
+        assertNotNull(afterSleep.updatedBundle.playerState.focusVigourBuff)
+        assertEquals(0L, RewardBudgetCalculator.remainingRollingBudgetSeconds(afterSleep.updatedBundle.budgetState, nightStart + 8 * 3600L))
+        assertEquals(8 * 3600L, RewardBudgetCalculator.remainingFocusBudgetSeconds(afterSleep.updatedBundle.budgetState, nightStart + 8 * 3600L))
+
+        // 2. Add a linked task + run 25m (1500s) uninterrupted Pomodoro with focusVigour active
+        val withTask = (ProgressionEngine.addFocusTask(
+            afterSleep.updatedBundle, "复习线性代数", "tag_study", 1, (nightStart + 9 * 3600L) * 1000L, "task_1"
+        ) as ActionOutcome.Success).value
+        val snapFocus = ProgressionEngine.createDepartureSnapshot(
+            withTask.playerState, withTask.inventory, withTask.discoveryState.unlockedKeepsakeIds, withTask.discoveryState
+        )
+        assertNotNull(snapFocus.focusVigourBuff)
+        val focusStart = nightStart + 9 * 3600L
+        val focusSess = ExpeditionSession(
+            sessionId = "focus_pomo_1",
+            status = SessionStatus.RUNNING,
+            routeId = "route_mistwood_outer",
+            strategy = ExpeditionStrategy.EXPLORE,
+            startAtUtcMs = focusStart * 1000L,
+            sessionSeed = 11223344L,
+            contentVersion = ContentCatalog.CONTENT_VERSION,
+            rulesVersion = ContentCatalog.RULES_VERSION,
+            snapshot = snapFocus,
+            sessionMode = SessionMode.FOCUS_POMODORO,
+            targetDurationSeconds = 1500L,
+            focusTagId = "tag_study",
+            linkedTaskId = "task_1",
+            dayPhenomenon = ContentCatalog.dayPhenomenonForUtcMs(focusStart * 1000L),
+            distractionCount = 0,
+            flipFocusSeconds = 600L
+        )
+        val afterFocus1 = settle(focusSess, withTask, 1500L)
+        assertEquals(1500L, afterFocus1.settlement.effectiveCreditedSeconds)
+        assertEquals(1000, afterFocus1.settlement.sleepBonusBasisPoints)
+        assertTrue(afterFocus1.settlement.inspirationInkGained > 0L)
+        assertTrue(afterFocus1.settlement.taskCompletedNow)
+        assertEquals(5, afterFocus1.settlement.recommendedBreakMinutes)
+        assertEquals(25, afterFocus1.settlement.nightPrepGained)
+        assertEquals(25, afterFocus1.updatedBundle.playerState.nightPrepCharge)
+        assertTrue("ms_first_focus" in afterFocus1.updatedBundle.discoveryState.unlockedMilestoneIds)
+        assertTrue("ms_poise_master" in afterFocus1.updatedBundle.discoveryState.unlockedMilestoneIds)
+        assertTrue("ms_soluna_cycle" in afterFocus1.updatedBundle.discoveryState.unlockedMilestoneIds)
+        assertTrue(afterFocus1.ledgerEntries.any { it.rewardKind == RewardKind.BASE_INSPIRATION_INK })
+
+        // 3. Inclusive distraction poise step-down: 1 distraction -> 600 bps, 3 distractions -> 300 bps
+        assertEquals(600, com.dreamtrail.core.sleep.FocusPoisePolicy.previewBasisPoints(1500L, 1500L, distractionCount = 1))
+        assertEquals(450, com.dreamtrail.core.sleep.FocusPoisePolicy.previewBasisPoints(1500L, 1500L, distractionCount = 2))
+        assertEquals(300, com.dreamtrail.core.sleep.FocusPoisePolicy.previewBasisPoints(1500L, 1500L, distractionCount = 3))
+
+        // 4. Task completion daily bounty cap <= 6 per 24h
+        var bountyBundle = afterFocus1.updatedBundle
+        val tNow = (focusStart + 2000L) * 1000L
+        repeat(7) { idx ->
+            bountyBundle = (ProgressionEngine.addFocusTask(bountyBundle, "任务$idx", "tag_work", 1, tNow, "t_cap_$idx") as ActionOutcome.Success).value
+        }
+        val goldBeforeCap = bountyBundle.playerState.resources.gold
+        repeat(7) { idx ->
+            bountyBundle = (ProgressionEngine.toggleOrCompleteFocusTask(bountyBundle, "t_cap_$idx", tNow) as ActionOutcome.Success).value
+        }
+        // Only 5 more bounties could succeed (1 already awarded during focusSess -> total 6 in 24h)
+        assertEquals(goldBeforeCap + 5 * 25L, bountyBundle.playerState.resources.gold)
+
+        // 5. Night prep tier boosts subsequent night sleep and resets charge
+        val prepSnap = ProgressionEngine.createDepartureSnapshot(bountyBundle.playerState, bountyBundle.inventory, discoveryState = bountyBundle.discoveryState)
+        assertEquals(1, prepSnap.nightPrepTier)
+        val night2 = ExpeditionSession(
+            sessionId = "night_prep_used",
+            status = SessionStatus.RUNNING,
+            routeId = "route_mistwood_outer",
+            strategy = ExpeditionStrategy.STEADY,
+            startAtUtcMs = (focusStart + 16 * 3600L) * 1000L,
+            sessionSeed = 556677L,
+            contentVersion = ContentCatalog.CONTENT_VERSION,
+            rulesVersion = ContentCatalog.RULES_VERSION,
+            snapshot = prepSnap,
+            sessionMode = SessionMode.SLEEP
+        )
+        val afterNight2 = settle(night2, bountyBundle, 6 * 3600L)
+        assertEquals(1, afterNight2.settlement.nightPrepTierUsed)
+        assertEquals(0, afterNight2.updatedBundle.playerState.nightPrepCharge)
+
+        // 6. Scriptorium upgrade + Regions 7 & 8 + Level 65 + Tier 4 Astral + Focus Spirits + v5 Backup
+        val endgameBundle = GameStateBundle(
+            playerState = PlayerState(
+                level = 64,
+                facilities = FacilityType.entries.associateWith { if (it == FacilityType.SCRIPTORIUM) 0 else 5 },
+                resources = ResourceBag(gold = 50_000L, bossMarks = 20L, inspirationInk = 500L,
+                    materials = RegionId.entries.associate { it.materialId to 400L }),
+                activeCompanionId = "comp_wen",
+                activeTeaBlendId = "tea_soluna_nectar"
+            ),
+            budgetState = RewardBudgetState(),
+            discoveryState = DiscoveryState(
+                onboardingCompleted = true,
+                totalCreditedSeconds = 650 * 3600L,
+                totalFocusCreditedSeconds = 80 * 3600L,
+                totalFocusSessionsCompleted = 30,
+                regionInvestigation = RegionId.entries.associate { it.id to 12 },
+                regionCreditedSeconds = RegionId.entries.associate { it.id to 30 * 3600L }
+            ),
+            inventory = listOf(
+                EquipmentInstance("w8", "eq_spire_soluna_halberd", 8, 7, AffixId.POMO_BLITZ, AffixId.INK_SCHOLAR),
+                EquipmentInstance("a8", "eq_spire_bastion_aegis", 8, 7, AffixId.POISE_WARD, AffixId.SOLUNA_DEW),
+                EquipmentInstance("c8", "eq_spire_prism_astrolabe", 8, 7, AffixId.POISE_WARD, AffixId.INK_SCHOLAR)
+            )
+        )
+        val reEndgame = endgameBundle.copy(
+            playerState = endgameBundle.playerState.copy(equippedWeaponId = "w8", equippedArmorId = "a8", equippedCharmId = "c8"),
+            discoveryState = ProgressionEngine.reconcileUnlocks(endgameBundle.playerState, endgameBundle.discoveryState)
+        )
+        assertTrue("route_athenaeum_cloister" in reEndgame.discoveryState.unlockedRouteIds)
+        assertTrue("route_spire_zenith" in reEndgame.discoveryState.unlockedRouteIds)
+        assertTrue((reEndgame.discoveryState.companionChapters["comp_wen"] ?: 0) >= 1)
+        assertTrue((reEndgame.discoveryState.companionChapters["comp_zhaolu"] ?: 0) >= 1)
+
+        var built = reEndgame
+        repeat(5) {
+            built = (ProgressionEngine.upgradeFacility(built, FacilityType.SCRIPTORIUM) as ActionOutcome.Success).value
+        }
+        assertEquals(5, built.playerState.facilityLevel(FacilityType.SCRIPTORIUM))
+        built = (ProgressionEngine.unlockAstralNode(built, "astral_scholar_1") as ActionOutcome.Success).value
+        built = (ProgressionEngine.unlockAstralNode(built, "astral_scholar_2") as ActionOutcome.Success).value
+        built = (ProgressionEngine.unlockAstralNode(built, "astral_scholar_3") as ActionOutcome.Success).value
+        built = (ProgressionEngine.unlockAstralNode(built, "astral_scholar_4") as ActionOutcome.Success).value
+
+        val spireSnap = ProgressionEngine.createDepartureSnapshot(built.playerState, built.inventory, discoveryState = built.discoveryState)
+        val spireStart = 1_700_500_000L
+        val spireFocus = ExpeditionSession(
+            sessionId = "spire_focus",
+            status = SessionStatus.RUNNING,
+            routeId = "route_spire_zenith",
+            strategy = ExpeditionStrategy.EXPLORE,
+            startAtUtcMs = spireStart * 1000L,
+            sessionSeed = 999888777L,
+            contentVersion = ContentCatalog.CONTENT_VERSION,
+            rulesVersion = ContentCatalog.RULES_VERSION,
+            snapshot = spireSnap,
+            sessionMode = SessionMode.FOCUS_FLOW,
+            focusTagId = "tag_create",
+            dayPhenomenon = ContentCatalog.dayPhenomenonForUtcMs(spireStart * 1000L)
+        )
+        val spireOut = settle(spireFocus, built, 4 * 3600L)
+        assertEquals(SessionMode.FOCUS_FLOW, spireOut.settlement.sessionMode)
+        assertTrue((spireOut.settlement.materialsGained[RegionId.DAWNLIGHT_SPIRE.materialId] ?: 0L) > 0L)
+        assertTrue(spireOut.ledgerEntries.any { it.rewardKind == RewardKind.BASE_MAT_SPIRE })
+        assertNotNull(spireOut.updatedBundle.playerState.pendingTeaEcho)
+        val afterTeaEcho = (ProgressionEngine.resolveTeaEcho(spireOut.updatedBundle, chooseOptionA = false) as ActionOutcome.Success).value.updatedBundle
+        assertNotNull(afterTeaEcho.playerState.activeTeaEchoBuff)
+
+        val v5Backup = SaveBackupPayload(
+            exportedAtUtcMs = spireStart * 1000L + 4 * 3600_000L,
+            contentVersion = ContentCatalog.CONTENT_VERSION,
+            rulesVersion = ContentCatalog.RULES_VERSION,
+            playerState = afterTeaEcho.playerState,
+            budgetState = afterTeaEcho.budgetState,
+            discoveryState = afterTeaEcho.discoveryState,
+            inventory = afterTeaEcho.inventory,
+            recentSettlements = listOf(spireOut.settlement),
+            ledgerEntries = spireOut.ledgerEntries
+        )
+        val decodedV5 = SaveBackupCodec.decodeAndValidate(SaveBackupCodec.encode(v5Backup))
+        assertTrue(decodedV5 is ActionOutcome.Success, decodedV5.toString())
     }
 }

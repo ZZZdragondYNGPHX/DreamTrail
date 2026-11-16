@@ -6,32 +6,36 @@ import com.dreamtrail.core.model.RegionId
 
 /**
  * Validates referential integrity, weights, counts, and unlock reachability in ContentCatalog.
- * Inspired by YAIRPG's Verify_Game_Objects() check, implemented cleanly in Kotlin.
  */
 object ContentValidator {
     fun validate(catalog: ContentCatalog = ContentCatalog): List<String> {
         val errors = mutableListOf<String>()
 
-        if (catalog.routes.size != 18) errors += "Expected 18 routes, got ${catalog.routes.size}"
-        if (catalog.passives.size != 14) errors += "Expected 14 passives, got ${catalog.passives.size}"
-        if (catalog.equipmentDefs.size != 30) errors += "Expected 30 equipment defs, got ${catalog.equipmentDefs.size}"
-        if (catalog.eventTemplates.size != 78) errors += "Expected 78 event templates, got ${catalog.eventTemplates.size}"
-        if (catalog.companionStories.size != 5) errors += "Expected 5 companion stories, got ${catalog.companionStories.size}"
-        if (catalog.keepsakes.size != 10) errors += "Expected 10 keepsakes, got ${catalog.keepsakes.size}"
-        if (catalog.milestones.size != 20) errors += "Expected 20 milestones, got ${catalog.milestones.size}"
-        if (catalog.teaBlends.size != 7) errors += "Expected 7 tea blends, got ${catalog.teaBlends.size}"
-        if (catalog.souvenirs.size != 18) errors += "Expected 18 souvenirs, got ${catalog.souvenirs.size}"
-        if (catalog.morningEchoes.size != 12) errors += "Expected 12 morning echoes, got ${catalog.morningEchoes.size}"
+        if (RegionId.entries.size != 8) errors += "Expected 8 regions, got ${RegionId.entries.size}"
+        if (catalog.routes.size != 24) errors += "Expected 24 routes, got ${catalog.routes.size}"
+        if (catalog.passives.size != 18) errors += "Expected 18 passives, got ${catalog.passives.size}"
+        if (catalog.equipmentDefs.size != 40) errors += "Expected 40 equipment defs, got ${catalog.equipmentDefs.size}"
+        if (catalog.eventTemplates.size != 128) errors += "Expected 128 event templates, got ${catalog.eventTemplates.size}"
+        if (catalog.companionStories.size != 7) errors += "Expected 7 companion stories, got ${catalog.companionStories.size}"
+        if (catalog.keepsakes.size != 12) errors += "Expected 12 keepsakes, got ${catalog.keepsakes.size}"
+        if (catalog.milestones.size != 30) errors += "Expected 30 milestones, got ${catalog.milestones.size}"
+        if (catalog.teaBlends.size != 13) errors += "Expected 13 tea blends, got ${catalog.teaBlends.size}"
+        if (catalog.souvenirs.size != 24) errors += "Expected 24 souvenirs, got ${catalog.souvenirs.size}"
+        if (catalog.morningEchoes.size != 16) errors += "Expected 16 morning echoes, got ${catalog.morningEchoes.size}"
+        if (catalog.teaEchoes.size != 16) errors += "Expected 16 tea echoes, got ${catalog.teaEchoes.size}"
+        if (catalog.focusSpirits.size != 16) errors += "Expected 16 focus spirits, got ${catalog.focusSpirits.size}"
+        if (catalog.defaultFocusTags.size != 6) errors += "Expected 6 default focus tags, got ${catalog.defaultFocusTags.size}"
         if (catalog.nightPhenomena.size < 7) errors += "Expected at least 7 night phenomena, got ${catalog.nightPhenomena.size}"
-        if (catalog.chronicles.size != 6) errors += "Expected 6 chronicle quests, got ${catalog.chronicles.size}"
-        if (catalog.astralNodes.size != 12) errors += "Expected 12 astral nodes, got ${catalog.astralNodes.size}"
-        if (catalog.transmuteRecipes.size != 6) errors += "Expected 6 transmute recipes, got ${catalog.transmuteRecipes.size}"
-        if (catalog.commissions.size != 6) errors += "Expected 6 camp commissions, got ${catalog.commissions.size}"
+        if (catalog.dayPhenomena.size < 8) errors += "Expected at least 8 day phenomena, got ${catalog.dayPhenomena.size}"
+        if (catalog.chronicles.size != 8) errors += "Expected 8 chronicle quests, got ${catalog.chronicles.size}"
+        if (catalog.astralNodes.size != 16) errors += "Expected 16 astral nodes, got ${catalog.astralNodes.size}"
+        if (catalog.transmuteRecipes.size != 9) errors += "Expected 9 transmute recipes, got ${catalog.transmuteRecipes.size}"
+        if (catalog.commissions.size != 10) errors += "Expected 10 camp commissions, got ${catalog.commissions.size}"
 
         val normalEnemies = catalog.enemies.filter { !it.isBoss }
         val bosses = catalog.enemies.filter { it.isBoss }
-        if (normalEnemies.size != 36) errors += "Expected 36 normal enemies, got ${normalEnemies.size}"
-        if (bosses.size != 6) errors += "Expected 6 bosses, got ${bosses.size}"
+        if (normalEnemies.size != 48) errors += "Expected 48 normal enemies, got ${normalEnemies.size}"
+        if (bosses.size != 8) errors += "Expected 8 bosses, got ${bosses.size}"
         for (boss in bosses) {
             if (boss.bossTrait == null) errors += "Boss ${boss.id} is missing bossTrait"
         }
@@ -47,6 +51,10 @@ object ContentValidator {
         checkUniqueIds(catalog.teaBlends.map { it.id }, "tea", errors)
         checkUniqueIds(catalog.souvenirs.map { it.id }, "souvenir", errors)
         checkUniqueIds(catalog.morningEchoes.map { it.id }, "morningEcho", errors)
+        checkUniqueIds(catalog.teaEchoes.map { it.id }, "teaEcho", errors)
+        checkUniqueIds(catalog.focusSpirits.map { it.id }, "focusSpirit", errors)
+        checkUniqueIds(catalog.defaultFocusTags.map { it.id }, "focusTag", errors)
+        checkUniqueIds(catalog.dayPhenomena.map { it.id }, "dayPhenomenon", errors)
         checkUniqueIds(catalog.chronicles.map { it.id }, "chronicle", errors)
         checkUniqueIds(catalog.astralNodes.map { it.id }, "astralNode", errors)
         checkUniqueIds(catalog.transmuteRecipes.map { it.id }, "transmuteRecipe", errors)
@@ -77,13 +85,17 @@ object ContentValidator {
             val regRoutes = catalog.routes.filter { it.regionId == region }
             if (regRoutes.size != 3) errors += "Region $region should have 3 routes, has ${regRoutes.size}"
             val regEvents = catalog.eventsForRegion(region)
-            if (regEvents.size != 13) errors += "Region $region should have 13 events, has ${regEvents.size}"
+            if (regEvents.size != 16) errors += "Region $region should have 16 events, has ${regEvents.size}"
             val regEquip = catalog.equipmentPoolForRegion(region)
             if (regEquip.isEmpty()) errors += "Region $region has no equipment pool"
             val regSouvenirs = catalog.souvenirsForRegion(region)
             if (regSouvenirs.size != 3) errors += "Region $region should have 3 souvenirs, has ${regSouvenirs.size}"
             val regEchoes = catalog.morningEchoesForRegion(region)
             if (regEchoes.size != 2) errors += "Region $region should have 2 morning echoes, has ${regEchoes.size}"
+            val regTeaEchoes = catalog.teaEchoesForRegion(region)
+            if (regTeaEchoes.size != 2) errors += "Region $region should have 2 tea echoes, has ${regTeaEchoes.size}"
+            val regSpirits = catalog.spiritsForRegion(region)
+            if (regSpirits.size != 2) errors += "Region $region should have 2 focus spirits, has ${regSpirits.size}"
         }
 
         val representedAffixes = catalog.equipmentDefs.map { it.defaultAffix }.toSet()
@@ -138,8 +150,8 @@ object ContentValidator {
             errors += "Expected 4 astral archetypes, got ${astralGroups.size}"
         }
         astralGroups.forEach { (arch, nodes) ->
-            if (nodes.map { it.tier }.sorted() != listOf(1, 2, 3)) {
-                errors += "Astral branch $arch must have tiers 1..3"
+            if (nodes.map { it.tier }.sorted() != listOf(1, 2, 3, 4)) {
+                errors += "Astral branch $arch must have tiers 1..4"
             }
         }
         for (rx in catalog.transmuteRecipes) {
@@ -148,12 +160,12 @@ object ContentValidator {
             if (rx.outputMaterialId != null && rx.outputMaterialId !in materialIds) {
                 errors += "Transmute ${rx.id} unknown output material"
             }
-            if (rx.outputMaterialAmount <= 0L && rx.outputBossMarks <= 0L) {
+            if (rx.outputMaterialAmount <= 0L && rx.outputBossMarks <= 0L && rx.outputInspirationInk <= 0L) {
                 errors += "Transmute ${rx.id} produces nothing"
             }
         }
         for (comm in catalog.commissions) {
-            if (comm.requiredMinNodes < 12) errors += "Commission ${comm.id} requiredMinNodes too small: ${comm.requiredMinNodes}"
+            if (comm.requiredMinNodes < 5) errors += "Commission ${comm.id} requiredMinNodes too small: ${comm.requiredMinNodes}"
         }
 
         return errors

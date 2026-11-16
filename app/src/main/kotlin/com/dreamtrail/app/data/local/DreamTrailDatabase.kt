@@ -18,7 +18,7 @@ import androidx.room.RoomDatabase
         AppSettingsEntity::class,
         SleepConsentEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class DreamTrailDatabase : RoomDatabase() {

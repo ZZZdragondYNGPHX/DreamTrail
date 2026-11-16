@@ -2,6 +2,7 @@ package com.dreamtrail.core.engine
 
 import com.dreamtrail.core.model.RewardBudgetState
 import com.dreamtrail.core.model.SecondInterval
+import com.dreamtrail.core.model.SessionMode
 import kotlin.math.max
 import kotlin.math.min
 
@@ -11,12 +12,14 @@ data class BudgetAllocation(
     val completedNodes: Int,
     val newRemainderSeconds: Int,
     val updatedIntervals: List<SecondInterval>,
-    val budgetNote: String?
+    val budgetNote: String?,
+    val newlyCreditedIntervals: List<SecondInterval>
 )
 
 /**
- * Enforces the rolling 24-hour 8-hour credit cap and single-session 12-hour window
- * using compressed UTC second intervals retained for 36 hours.
+ * Enforces independent rolling 24-hour 8-hour credit caps for rest (sleep/nap)
+ * and daytime focus (Pomodoro/Flowmodoro) sessions, using compressed UTC second
+ * intervals retained for 36 hours.
  */
 object RewardBudgetCalculator {
     const val SECONDS_PER_NODE = 300L
@@ -28,28 +31,32 @@ object RewardBudgetCalculator {
     fun allocate(
         budgetState: RewardBudgetState,
         sessionStartUtcSec: Long,
-        rawDurationSeconds: Long
+        rawDurationSeconds: Long,
+        sessionMode: SessionMode = SessionMode.SLEEP
     ): BudgetAllocation {
         val safeRaw = rawDurationSeconds.coerceAtLeast(0L)
-        val windowCapped = safeRaw.coerceAtMost(MAX_SINGLE_WINDOW_SECONDS)
+        val singleCap = sessionMode.maxSingleWindowSeconds.coerceAtMost(MAX_SINGLE_WINDOW_SECONDS)
+        val windowCapped = safeRaw.coerceAtMost(singleCap)
         val sessionEndUtcSec = sessionStartUtcSec + windowCapped
 
+        val sourceIntervals = if (sessionMode.isFocus) budgetState.focusCreditedIntervals else budgetState.creditedIntervals
+        val sourceRemainder = if (sessionMode.isFocus) budgetState.focusRemainderSeconds else budgetState.remainderSeconds
+
         val working = coalesceIntervals(
-            budgetState.creditedIntervals.filter { it.endSec > sessionEndUtcSec - HISTORY_RETENTION_SECONDS }
+            sourceIntervals.filter { it.endSec > sessionEndUtcSec - HISTORY_RETENTION_SECONDS }
         ).toMutableList()
 
         var t = sessionStartUtcSec
         var creditedSeconds = 0L
+        val newlyCredited = mutableListOf<SecondInterval>()
 
         while (t < sessionEndUtcSec) {
-            // Skip any time already covered by a previously credited interval (e.g. clock anomaly overlap)
             val covering = working.firstOrNull { it.startSec <= t && t < it.endSec }
             if (covering != null) {
                 t = min(sessionEndUtcSec, covering.endSec)
                 continue
             }
 
-            // Do not step across the start of a future already-credited interval
             val nextExistingStart = working.firstOrNull { it.startSec > t }?.startSec
             val segmentEnd = if (nextExistingStart != null) min(sessionEndUtcSec, nextExistingStart) else sessionEndUtcSec
 
@@ -61,6 +68,7 @@ object RewardBudgetCalculator {
                 val step = min(segmentEnd - t, avail)
                 if (step > 0L) {
                     insertAndCoalesce(working, SecondInterval(t, t + step))
+                    newlyCredited += SecondInterval(t, t + step)
                     creditedSeconds += step
                     t += step
                 } else {
@@ -72,6 +80,7 @@ object RewardBudgetCalculator {
                     val step = min(segmentEnd - t, exiting.endSec + ROLLING_WINDOW_SECONDS - t)
                     if (step > 0L) {
                         insertAndCoalesce(working, SecondInterval(t, t + step))
+                        newlyCredited += SecondInterval(t, t + step)
                         creditedSeconds += step
                         t += step
                     } else {
@@ -93,15 +102,21 @@ object RewardBudgetCalculator {
             working.filter { it.endSec > sessionEndUtcSec - HISTORY_RETENTION_SECONDS }
         )
 
-        val totalPoolSeconds = budgetState.remainderSeconds.toLong().coerceIn(0L, SECONDS_PER_NODE - 1) + creditedSeconds
+        val totalPoolSeconds = sourceRemainder.toLong().coerceIn(0L, SECONDS_PER_NODE - 1) + creditedSeconds
         val completedNodes = (totalPoolSeconds / SECONDS_PER_NODE).toInt()
         val newRemainderSeconds = (totalPoolSeconds % SECONDS_PER_NODE).toInt()
 
         val budgetNote = when {
-            windowCapped > 0L && creditedSeconds == 0L ->
+            windowCapped > 0L && creditedSeconds == 0L -> if (sessionMode.isFocus) {
+                "当前 24 小时专注研习额度已用完，伙伴在书桌旁安静陪伴。"
+            } else {
                 "当前 24 小时主要探索额度已用完，伙伴在营地附近安全休整。"
-            creditedSeconds < windowCapped ->
+            }
+            creditedSeconds < windowCapped -> if (sessionMode.isFocus) {
+                "今日专注核心收益额度已满，超出时段转为轻松伴读。"
+            } else {
                 "伙伴今日已完成主要探索，超出额度的时段转为营地休整。"
+            }
             else -> null
         }
 
@@ -111,12 +126,34 @@ object RewardBudgetCalculator {
             completedNodes = completedNodes,
             newRemainderSeconds = newRemainderSeconds,
             updatedIntervals = pruned,
-            budgetNote = budgetNote
+            budgetNote = budgetNote,
+            newlyCreditedIntervals = coalesceIntervals(newlyCredited)
+        )
+    }
+
+    fun applyAllocation(
+        budgetState: RewardBudgetState,
+        allocation: BudgetAllocation,
+        sessionMode: SessionMode
+    ): RewardBudgetState = if (sessionMode.isFocus) {
+        budgetState.copy(
+            focusCreditedIntervals = allocation.updatedIntervals,
+            focusRemainderSeconds = allocation.newRemainderSeconds
+        )
+    } else {
+        budgetState.copy(
+            creditedIntervals = allocation.updatedIntervals,
+            remainderSeconds = allocation.newRemainderSeconds
         )
     }
 
     fun remainingRollingBudgetSeconds(budgetState: RewardBudgetState, nowUtcSec: Long): Long {
         val used = usedInWindow(budgetState.creditedIntervals, nowUtcSec - ROLLING_WINDOW_SECONDS, nowUtcSec)
+        return (ROLLING_CREDIT_CAP_SECONDS - used).coerceAtLeast(0L)
+    }
+
+    fun remainingFocusBudgetSeconds(budgetState: RewardBudgetState, nowUtcSec: Long): Long {
+        val used = usedInWindow(budgetState.focusCreditedIntervals, nowUtcSec - ROLLING_WINDOW_SECONDS, nowUtcSec)
         return (ROLLING_CREDIT_CAP_SECONDS - used).coerceAtLeast(0L)
     }
 

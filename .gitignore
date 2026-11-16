@@ -9,6 +9,7 @@
 /health_records/
 /dist/
 signing.properties
+release.properties
 
 # Gradle & Kotlin build caches and outputs
 .gradle/

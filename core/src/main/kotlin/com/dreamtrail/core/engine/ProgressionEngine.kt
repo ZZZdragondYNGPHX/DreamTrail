@@ -140,9 +140,11 @@ object ProgressionEngine {
         val innLevel = playerState.facilityLevel(FacilityType.INN)
         val teaHearthLevel = playerState.facilityLevel(FacilityType.TEA_HEARTH)
         val conservatoryLevel = playerState.facilityLevel(FacilityType.CONSERVATORY)
+        val scriptoriumLevel = playerState.facilityLevel(FacilityType.SCRIPTORIUM)
         stats = stats.copy(
-            maxHp = stats.maxHp + innLevel * 4 + teaHearthLevel * 3 + conservatoryLevel * 6,
-            defense = stats.defense + conservatoryLevel / 2
+            maxHp = stats.maxHp + innLevel * 4 + teaHearthLevel * 3 + conservatoryLevel * 6 + scriptoriumLevel * 8,
+            attack = stats.attack + scriptoriumLevel * 2,
+            defense = stats.defense + conservatoryLevel / 2 + scriptoriumLevel * 2
         )
 
         val equippedIds = playerState.equippedInstanceIds()
@@ -165,6 +167,9 @@ object ProgressionEngine {
             stats = stats.copy(speed = stats.speed + 4)
         }
         if ("passive_chrono_step" in playerState.equippedPassives) {
+            stats = stats.copy(speed = stats.speed + 5)
+        }
+        if ("passive_quill_tempo" in playerState.equippedPassives) {
             stats = stats.copy(speed = stats.speed + 5)
         }
         if ("keepsake_stag_lantern" in keepsakes) {
@@ -191,6 +196,12 @@ object ProgressionEngine {
         if ("keepsake_conservatory_bell" in keepsakes) {
             stats = stats.copy(defense = stats.defense + 6, speed = stats.speed + 3)
         }
+        if ("keepsake_athenaeum_quill" in keepsakes) {
+            stats = stats.copy(attack = stats.attack + 10, speed = stats.speed + 3)
+        }
+        if ("keepsake_soluna_sundial" in keepsakes) {
+            stats = stats.copy(maxHp = stats.maxHp + 42, attack = stats.attack + 10, defense = stats.defense + 8)
+        }
         for (souvenirId in souvenirs) {
             val souv = ContentCatalog.souvenirById(souvenirId) ?: continue
             stats += souv.bonusStats
@@ -200,6 +211,10 @@ object ProgressionEngine {
             stats += node.bonusStats
         }
         if (discoveryState != null) {
+            for (spiritId in discoveryState.unlockedSpiritIds) {
+                val spirit = ContentCatalog.spiritById(spiritId) ?: continue
+                stats += spirit.bonusStats
+            }
             for (chron in ContentCatalog.chronicles) {
                 if ((discoveryState.chronicleProgress[chron.id] ?: 0) >= 3) {
                     stats += chron.rewardStats
@@ -219,6 +234,12 @@ object ProgressionEngine {
             }
             if (companionAffinityRank(discoveryState.companionAffinity["comp_cen"] ?: 0) >= 4) {
                 stats = stats.copy(maxHp = stats.maxHp + 12, defense = stats.defense + 3)
+            }
+            if (companionAffinityRank(discoveryState.companionAffinity["comp_wen"] ?: 0) >= 4) {
+                stats = stats.copy(attack = stats.attack + 5, speed = stats.speed + 2)
+            }
+            if (companionAffinityRank(discoveryState.companionAffinity["comp_zhaolu"] ?: 0) >= 4) {
+                stats = stats.copy(maxHp = stats.maxHp + 16, attack = stats.attack + 4, speed = stats.speed + 3)
             }
             val masteredSpecies = discoveryState.enemyKillCounts.values.count { it >= 15 }
             if (masteredSpecies > 0) {
@@ -260,6 +281,12 @@ object ProgressionEngine {
                 defense = effective.defense + buff.combatDefBonus
             )
         }
+        playerState.activeTeaEchoBuff?.let { buff ->
+            effective = effective.copy(
+                attack = effective.attack + buff.combatAtkBonus,
+                defense = effective.defense + buff.combatDefBonus
+            )
+        }
 
         val unlockedCompanions = if (discoveryState != null) {
             ContentCatalog.companionStories.filter { (discoveryState.companionChapters[it.id] ?: 0) >= 1 }.map { it.id }
@@ -268,6 +295,14 @@ object ProgressionEngine {
         }
         val activeComp = playerState.activeCompanionId?.takeIf { it in unlockedCompanions }
         val dispatchComps = unlockedCompanions.filter { it != activeComp }
+        val nightPrepTier = when {
+            playerState.nightPrepCharge >= 100 -> 3
+            playerState.nightPrepCharge >= 50 -> 2
+            playerState.nightPrepCharge >= 25 -> 1
+            else -> 0
+        }
+        val unlockedSpirits = discoveryState?.unlockedSpiritIds ?: emptySet()
+        val activeSpirit = playerState.activeSpiritId?.takeIf { it in unlockedSpirits }
 
         return ExpeditionPlayerSnapshot(
             level = playerState.level,
@@ -285,7 +320,12 @@ object ProgressionEngine {
             unlockedAstralNodeIds = playerState.unlockedAstralNodeIds,
             companionAffinity = discoveryState?.companionAffinity ?: emptyMap(),
             enemyKillCounts = discoveryState?.enemyKillCounts ?: emptyMap(),
-            chronicleProgress = discoveryState?.chronicleProgress ?: emptyMap()
+            chronicleProgress = discoveryState?.chronicleProgress ?: emptyMap(),
+            nightPrepTier = nightPrepTier,
+            focusVigourBuff = playerState.focusVigourBuff?.takeIf { it.remainingFocusSeconds > 0L },
+            activeTeaEchoBuff = playerState.activeTeaEchoBuff,
+            activeSpiritId = activeSpirit,
+            unlockedSpiritIds = unlockedSpirits
         )
     }
 
@@ -297,12 +337,32 @@ object ProgressionEngine {
         if (current >= 5) return ActionOutcome.Failure("${facilityType.displayName}已达到最高等级 Lv.5")
         val target = current + 1
         val requiredHours = ContentCatalog.facilityRequiredExploreHours(facilityType, target)
+        val res = bundle.playerState.resources
+
+        if (facilityType == FacilityType.SCRIPTORIUM) {
+            val timeOk = bundle.discoveryState.totalCreditedSeconds >= requiredHours * 3600L ||
+                bundle.discoveryState.totalFocusCreditedSeconds >= target * 4 * 3600L
+            if (!timeOk) {
+                return ActionOutcome.Failure("累计总探索 $requiredHours 小时或专注达 ${target * 4} 小时后可继续修葺研习书斋")
+            }
+            val (goldCost, inkCost) = ContentCatalog.facilityScriptoriumCost(target)
+            if (res.gold < goldCost || res.inspirationInk < inkCost) {
+                return ActionOutcome.Failure("金币或澄明墨晶不足，无法升至 Lv.$target")
+            }
+            val nextResources = res.addGold(-goldCost).addInspirationInk(-inkCost)
+            val nextFacilities = bundle.playerState.facilities.toMutableMap().apply {
+                put(facilityType, target)
+            }
+            val nextPlayer = bundle.playerState.copy(resources = nextResources, facilities = nextFacilities)
+            val nextDiscovery = reconcileUnlocks(nextPlayer, bundle.discoveryState, bundle.inventory)
+            return ActionOutcome.Success(bundle.copy(playerState = nextPlayer, discoveryState = nextDiscovery))
+        }
+
         if (bundle.discoveryState.totalCreditedSeconds < requiredHours * 3600L) {
-            return ActionOutcome.Failure("累计有效探索 ${requiredHours} 小时后可继续修葺")
+            return ActionOutcome.Failure("累计有效探索 $requiredHours 小时后可继续修葺")
         }
         val (goldCost, matPair) = ContentCatalog.facilityUpgradeCost(facilityType, target)
         val (matId, matCost) = matPair
-        val res = bundle.playerState.resources
         if (res.gold < goldCost || res.materialCount(matId) < matCost) {
             return ActionOutcome.Failure("资源不足，无法升至 Lv.$target")
         }
@@ -826,6 +886,9 @@ object ProgressionEngine {
         if (recipe.outputBossMarks > 0L) {
             nextRes = nextRes.addBossMarks(recipe.outputBossMarks)
         }
+        if (recipe.outputInspirationInk > 0L) {
+            nextRes = nextRes.addInspirationInk(recipe.outputInspirationInk)
+        }
         val nextPlayer = bundle.playerState.copy(resources = nextRes)
         val nextDiscovery = reconcileUnlocks(nextPlayer, bundle.discoveryState, bundle.inventory)
         return ActionOutcome.Success(bundle.copy(playerState = nextPlayer, discoveryState = nextDiscovery))
@@ -893,6 +956,169 @@ object ProgressionEngine {
         return ActionOutcome.Success(bundle.copy(playerState = nextPlayer, discoveryState = nextDiscovery))
     }
 
+    fun resolveTeaEcho(bundle: GameStateBundle, chooseOptionA: Boolean): ActionOutcome<MorningEchoResolution> {
+        val pending = bundle.playerState.pendingTeaEcho
+            ?: return ActionOutcome.Failure("当前没有待处理的午后茶歇奇遇")
+        val def = ContentCatalog.teaEchoById(pending.echoId)
+            ?: return ActionOutcome.Failure("茶歇奇遇配置已缺失")
+        val outcome = if (chooseOptionA) def.choiceA else def.choiceB
+
+        var res = bundle.playerState.resources
+            .addGold(outcome.rewardGold)
+            .addInspirationInk(outcome.rewardInk)
+        if (outcome.rewardMaterialRegion != null && outcome.rewardMaterialAmount > 0L) {
+            res = res.addMaterial(outcome.rewardMaterialRegion.materialId, outcome.rewardMaterialAmount)
+        }
+        val (nextLv, nextXp) = applyXp(bundle.playerState.level, bundle.playerState.xp, outcome.rewardXp)
+        val nextPlayer = bundle.playerState.copy(
+            level = nextLv,
+            xp = nextXp,
+            resources = res,
+            pendingTeaEcho = null,
+            activeTeaEchoBuff = outcome.nextBuff ?: bundle.playerState.activeTeaEchoBuff
+        )
+        val nextDiscovery = reconcileUnlocks(nextPlayer, bundle.discoveryState, bundle.inventory)
+        return ActionOutcome.Success(
+            MorningEchoResolution(
+                updatedBundle = bundle.copy(playerState = nextPlayer, discoveryState = nextDiscovery),
+                echoTitle = def.title,
+                summaryText = outcome.resultSummary
+            )
+        )
+    }
+
+    fun selectFocusSpirit(bundle: GameStateBundle, spiritId: String?): ActionOutcome<GameStateBundle> {
+        if (spiritId != null) {
+            ContentCatalog.spiritById(spiritId) ?: return ActionOutcome.Failure("未找到伴读小灵兽信息")
+            if (spiritId !in bundle.discoveryState.unlockedSpiritIds) {
+                return ActionOutcome.Failure("尚未结识该伴读小灵兽")
+            }
+        }
+        return ActionOutcome.Success(bundle.copy(playerState = bundle.playerState.copy(activeSpiritId = spiritId)))
+    }
+
+    fun selectFocusTag(bundle: GameStateBundle, tagId: String): ActionOutcome<GameStateBundle> {
+        val exists = ContentCatalog.defaultFocusTagById(tagId) != null ||
+            bundle.playerState.customFocusTags.any { it.id == tagId }
+        if (!exists) return ActionOutcome.Failure("专注标签不存在")
+        return ActionOutcome.Success(bundle.copy(playerState = bundle.playerState.copy(selectedFocusTagId = tagId)))
+    }
+
+    fun addCustomFocusTag(
+        bundle: GameStateBundle,
+        name: String,
+        archetype: BuildArchetype,
+        tagId: String
+    ): ActionOutcome<GameStateBundle> {
+        val clean = name.trim().take(10)
+        if (clean.isEmpty()) return ActionOutcome.Failure("标签名称不能为空")
+        val existingNames = (ContentCatalog.defaultFocusTags + bundle.playerState.customFocusTags).map { it.name }.toSet()
+        if (clean in existingNames) return ActionOutcome.Failure("已存在同名专注标签")
+        if (tagId.isBlank() || ContentCatalog.defaultFocusTagById(tagId) != null ||
+            bundle.playerState.customFocusTags.any { it.id == tagId }) return ActionOutcome.Failure("标签编号已存在")
+        if (bundle.playerState.customFocusTags.size >= 6) return ActionOutcome.Failure("自定义专注标签最多保留 6 个")
+        val newTag = FocusTagDef(
+            id = tagId,
+            name = clean,
+            archetype = archetype,
+            summary = "自定义标签 · 对应${archetype.displayName}偏好"
+        )
+        val nextPlayer = bundle.playerState.copy(
+            customFocusTags = bundle.playerState.customFocusTags + newTag,
+            selectedFocusTagId = newTag.id
+        )
+        return ActionOutcome.Success(bundle.copy(playerState = nextPlayer))
+    }
+
+    fun addFocusTask(
+        bundle: GameStateBundle,
+        title: String,
+        tagId: String,
+        targetPomodoros: Int,
+        nowUtcMs: Long,
+        taskId: String
+    ): ActionOutcome<GameStateBundle> {
+        val clean = title.trim().take(40)
+        if (clean.isEmpty()) return ActionOutcome.Failure("待办内容不能为空")
+        if (ContentCatalog.defaultFocusTagById(tagId) == null &&
+            bundle.playerState.customFocusTags.none { it.id == tagId }) return ActionOutcome.Failure("专注标签不存在")
+        if (taskId.isBlank() || bundle.playerState.focusTasks.any { it.id == taskId }) return ActionOutcome.Failure("待办编号已存在")
+        if (bundle.playerState.focusTasks.size >= 20) return ActionOutcome.Failure("待办列表已满 20 项，请先清理已完成项")
+        val safeTarget = targetPomodoros.coerceIn(1, 8)
+        val item = FocusTaskItem(
+            id = taskId,
+            title = clean,
+            tagId = tagId,
+            targetPomodoros = safeTarget,
+            completedPomodoros = 0,
+            completed = false,
+            createdAtUtcMs = nowUtcMs
+        )
+        val nextPlayer = bundle.playerState.copy(
+            focusTasks = listOf(item) + bundle.playerState.focusTasks,
+            activeFocusTaskId = bundle.playerState.activeFocusTaskId ?: item.id
+        )
+        return ActionOutcome.Success(bundle.copy(playerState = nextPlayer))
+    }
+
+    fun toggleOrCompleteFocusTask(
+        bundle: GameStateBundle,
+        taskId: String,
+        nowUtcMs: Long
+    ): ActionOutcome<GameStateBundle> {
+        val task = bundle.playerState.focusTasks.firstOrNull { it.id == taskId }
+            ?: return ActionOutcome.Failure("未找到目标待办")
+        if (task.completed) return ActionOutcome.Failure("该待办已完成")
+
+        val nowSec = nowUtcMs / 1000L
+        var recentBounties = bundle.budgetState.taskBountyUtcSeconds.filter { it > nowSec - 86_400L }
+        var res = bundle.playerState.resources
+        var xpGain = 0L
+        if (recentBounties.size < 6) {
+            res = res.addGold(25L).addInspirationInk(3L)
+            xpGain = 30L
+            recentBounties = recentBounties + nowSec
+        }
+        val (nextLv, nextXp) = applyXp(bundle.playerState.level, bundle.playerState.xp, xpGain)
+        val nextTasks = bundle.playerState.focusTasks.map {
+            if (it.id == taskId) it.copy(completed = true, completedPomodoros = maxOf(it.completedPomodoros, it.targetPomodoros)) else it
+        }
+        val nextActive = if (bundle.playerState.activeFocusTaskId == taskId) {
+            nextTasks.firstOrNull { !it.completed }?.id
+        } else bundle.playerState.activeFocusTaskId
+        val nextPlayer = bundle.playerState.copy(
+            level = nextLv,
+            xp = nextXp,
+            resources = res,
+            focusTasks = nextTasks,
+            activeFocusTaskId = nextActive
+        )
+        val nextBudget = bundle.budgetState.copy(taskBountyUtcSeconds = recentBounties)
+        val rawDiscovery = bundle.discoveryState.copy(completedTasksCount = bundle.discoveryState.completedTasksCount + 1)
+        val nextDiscovery = reconcileUnlocks(nextPlayer, rawDiscovery, bundle.inventory)
+        return ActionOutcome.Success(bundle.copy(playerState = nextPlayer, budgetState = nextBudget, discoveryState = nextDiscovery))
+    }
+
+    fun deleteFocusTask(bundle: GameStateBundle, taskId: String): ActionOutcome<GameStateBundle> {
+        val nextTasks = bundle.playerState.focusTasks.filterNot { it.id == taskId }
+        val nextActive = if (bundle.playerState.activeFocusTaskId == taskId) nextTasks.firstOrNull { !it.completed }?.id else bundle.playerState.activeFocusTaskId
+        return ActionOutcome.Success(
+            bundle.copy(playerState = bundle.playerState.copy(focusTasks = nextTasks, activeFocusTaskId = nextActive))
+        )
+    }
+
+    fun clearCompletedFocusTasks(bundle: GameStateBundle): ActionOutcome<GameStateBundle> =
+        ActionOutcome.Success(bundle.copy(playerState = bundle.playerState.copy(
+            focusTasks = bundle.playerState.focusTasks.filterNot { it.completed }
+        )))
+
+    fun selectActiveFocusTask(bundle: GameStateBundle, taskId: String?): ActionOutcome<GameStateBundle> {
+        if (taskId != null && bundle.playerState.focusTasks.none { it.id == taskId && !it.completed }) {
+            return ActionOutcome.Failure("待办事项不存在或已完成")
+        }
+        return ActionOutcome.Success(bundle.copy(playerState = bundle.playerState.copy(activeFocusTaskId = taskId)))
+    }
+
     /**
      * Reconciles route, passive, companion chapter, and milestone unlocks from current player, discovery, and inventory state.
      */
@@ -905,6 +1131,7 @@ object ProgressionEngine {
         val innLv = playerState.facilityLevel(FacilityType.INN)
         val teaHearthLv = playerState.facilityLevel(FacilityType.TEA_HEARTH)
         val conservatoryLv = playerState.facilityLevel(FacilityType.CONSERVATORY)
+        val scriptoriumLv = playerState.facilityLevel(FacilityType.SCRIPTORIUM)
 
         val mistInv = discoveryState.regionInvestigation[RegionId.MISTWOOD.id] ?: 0
         val tidalInv = discoveryState.regionInvestigation[RegionId.TIDAL_FLAT.id] ?: 0
@@ -912,8 +1139,13 @@ object ProgressionEngine {
         val cloudInv = discoveryState.regionInvestigation[RegionId.CLOUD_SANCTUARY.id] ?: 0
         val dreamInv = discoveryState.regionInvestigation[RegionId.DREAM_SEA.id] ?: 0
         val astralInv = discoveryState.regionInvestigation[RegionId.ASTRAL_ARCH.id] ?: 0
+        val athenaeumInv = discoveryState.regionInvestigation[RegionId.SUNLIT_ATHENAEUM.id] ?: 0
+        val spireInv = discoveryState.regionInvestigation[RegionId.DAWNLIGHT_SPIRE.id] ?: 0
 
         val routes = discoveryState.unlockedRouteIds.toMutableSet()
+        val focusSec = discoveryState.totalFocusCreditedSeconds
+        val totalSec = discoveryState.totalCreditedSeconds
+
         val investigations = listOf(
             true,
             mistInv >= 3,
@@ -932,10 +1164,25 @@ object ProgressionEngine {
             dreamInv >= 5,
             dreamInv >= 5,
             astralInv >= 3,
-            astralInv >= 5
+            astralInv >= 5,
+            astralInv >= 2 || (focusSec >= 24 * 3600L && playerState.level >= 35),
+            athenaeumInv >= 3,
+            athenaeumInv >= 5,
+            athenaeumInv >= 3 || (focusSec >= 48 * 3600L && playerState.level >= 42),
+            spireInv >= 3,
+            spireInv >= 5
         )
         ContentCatalog.routes.forEachIndexed { index, route ->
-            if (investigations[index] && discoveryState.totalCreditedSeconds >= route.requiredExploreHours * 3600L) {
+            val timeOk = when (route.id) {
+                "route_athenaeum_cloister" -> totalSec >= route.requiredExploreHours * 3600L || (focusSec >= 24 * 3600L && playerState.level >= 35)
+                "route_athenaeum_stacks" -> totalSec >= route.requiredExploreHours * 3600L || focusSec >= 32 * 3600L
+                "route_athenaeum_dome" -> totalSec >= route.requiredExploreHours * 3600L || focusSec >= 40 * 3600L
+                "route_spire_steps" -> totalSec >= route.requiredExploreHours * 3600L || ("route_athenaeum_cloister" in routes && focusSec >= 48 * 3600L && playerState.level >= 42)
+                "route_spire_pendulum" -> totalSec >= route.requiredExploreHours * 3600L || focusSec >= 58 * 3600L
+                "route_spire_zenith" -> totalSec >= route.requiredExploreHours * 3600L || focusSec >= 70 * 3600L
+                else -> totalSec >= route.requiredExploreHours * 3600L
+            }
+            if (investigations[index] && timeOk) {
                 routes += route.id
             }
         }
@@ -946,8 +1193,19 @@ object ProgressionEngine {
             for (ch in story.chapters) {
                 if (ch.chapterIndex == unlockedCh + 1) {
                     val regInv = discoveryState.regionInvestigation[ch.regionId.id] ?: 0
-                    if (innLv >= ch.requiredInnLevel && regInv >= ch.requiredInvestigation &&
-                        discoveryState.totalCreditedSeconds >= ch.requiredExploreHours * 3600L) {
+                    val eligible = when {
+                        story.id == "comp_wen" && ch.chapterIndex == 1 ->
+                            discoveryState.totalFocusSessionsCompleted >= 3 || "route_athenaeum_cloister" in routes
+                        story.id == "comp_zhaolu" && ch.chapterIndex == 1 ->
+                            focusSec >= 6 * 3600L || "route_spire_steps" in routes
+                        story.id in setOf("comp_wen", "comp_zhaolu") ->
+                            innLv >= ch.requiredInnLevel && regInv >= ch.requiredInvestigation &&
+                                (totalSec >= ch.requiredExploreHours * 3600L || focusSec >= ch.chapterIndex * 24 * 3600L)
+                        else ->
+                            innLv >= ch.requiredInnLevel && regInv >= ch.requiredInvestigation &&
+                                totalSec >= ch.requiredExploreHours * 3600L
+                    }
+                    if (eligible) {
                         unlockedCh = ch.chapterIndex
                     }
                 }
@@ -970,6 +1228,10 @@ object ProgressionEngine {
         if (playerState.level >= 25 || workshopLv >= 4) passives += "passive_chrono_step"
         if (conservatoryLv >= 3 || (chapters["comp_cen"] ?: 0) >= 1) passives += "passive_herbarium_bloom"
         if (discoveryState.discoveredEnemyIds.size >= 24 || (chapters["comp_cen"] ?: 0) >= 2) passives += "passive_bestiary_scholar"
+        if (scriptoriumLv >= 1 || focusSec >= 4 * 3600L) passives += "passive_sunlit_focus"
+        if ("route_spire_steps" in routes || (chapters["comp_zhaolu"] ?: 0) >= 1) passives += "passive_quill_tempo"
+        if (scriptoriumLv >= 3 || discoveryState.totalFocusSessionsCompleted >= 12) passives += "passive_soluna_breath"
+        if ("route_athenaeum_cloister" in routes || (chapters["comp_wen"] ?: 0) >= 1) passives += "passive_archivist_eye"
 
         val milestones = discoveryState.unlockedMilestoneIds.toMutableSet()
         if (discoveryState.totalJourneysCompleted >= 1) milestones += "ms_first_step"
@@ -985,10 +1247,12 @@ object ProgressionEngine {
         if (inventory.any { it.level >= 5 }) milestones += "ms_master_artisan"
         if (playerState.facilities.values.any { it >= 4 }) milestones += "ms_camp_builder"
         if (discoveryState.seenEventIds.size >= 30 || discoveryState.discoveredEnemyIds.size >= 18) milestones += "ms_lore_collector"
-        if (discoveryState.totalCreditedSeconds >= 160 * 3600L && ContentCatalog.companionStories.count { (chapters[it.id] ?: 0) >= 1 } >= 3) {
+        if (totalSec >= 160 * 3600L && ContentCatalog.companionStories.count { (chapters[it.id] ?: 0) >= 1 } >= 3) {
             milestones += "ms_night_guardian"
         }
-        if (ContentCatalog.routes.filter { it.regionId != RegionId.ASTRAL_ARCH }.all { it.id in routes }) {
+        if (ContentCatalog.routes.filter {
+                it.regionId in setOf(RegionId.MISTWOOD, RegionId.TIDAL_FLAT, RegionId.STARLIT_RIDGE, RegionId.CLOUD_SANCTUARY, RegionId.DREAM_SEA)
+            }.all { it.id in routes }) {
             milestones += "ms_dream_sea_voyager"
         }
         if (discoveryState.unlockedSouvenirIds.size >= 8) milestones += "ms_souvenir_curator"
@@ -1000,7 +1264,11 @@ object ProgressionEngine {
         if (discoveryState.dreamBeaconClears.any { (tier, count) -> tier >= 1 && count > 0 }) {
             milestones += "ms_beacon_conqueror"
         }
-        if (ContentCatalog.routes.all { it.id in routes }) milestones += "ms_astral_arch_pioneer"
+        if (ContentCatalog.routes.filter {
+                it.regionId !in setOf(RegionId.SUNLIT_ATHENAEUM, RegionId.DAWNLIGHT_SPIRE)
+            }.all { it.id in routes }) {
+            milestones += "ms_astral_arch_pioneer"
+        }
         if (playerState.equippedPassives.size >= 3) milestones += "ms_triple_passive"
         if (activeResonances.any { it.tier >= 3 }) milestones += "ms_resonance_tier3"
         if (inventory.any { it.level >= 7 }) milestones += "ms_masterwork_artisan"
@@ -1010,6 +1278,17 @@ object ProgressionEngine {
         if (discoveryState.enemyKillCounts.values.count { it >= 15 } >= 12) {
             milestones += "ms_bestiary_expert"
         }
+        if (discoveryState.totalFocusSessionsCompleted >= 1) milestones += "ms_first_focus"
+        if (focusSec >= 10 * 3600L) milestones += "ms_focus_10h"
+        if (focusSec >= 50 * 3600L) milestones += "ms_focus_50h"
+        if (scriptoriumLv >= 3) milestones += "ms_scriptorium_builder"
+        if (discoveryState.unlockedSpiritIds.size >= 6) milestones += "ms_spirit_collector"
+        if (discoveryState.completedTasksCount >= 10) milestones += "ms_task_finisher"
+        if (focusSec > 0L && totalSec > focusSec) milestones += "ms_soluna_cycle"
+        if (ContentCatalog.routes.filter { it.regionId != RegionId.DAWNLIGHT_SPIRE }.all { it.id in routes }) {
+            milestones += "ms_athenaeum_scholar"
+        }
+        if (ContentCatalog.routes.all { it.id in routes }) milestones += "ms_dawnlight_master"
 
         return discoveryState.copy(
             unlockedRouteIds = routes,
